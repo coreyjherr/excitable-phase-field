@@ -1,0 +1,7 @@
+CompileFlags:
+  Add: --cuda-gpu-arch=sm_52
+  Remove: 
+    - -rdc=true
+    - --generate-code=arch=compute_52,code=[compute_52,sm_52]
+    - -ccbin=/usr/bin/g++-11
+    - -forward-unknown-to-host-compiler

@@ -1,4 +1,5 @@
 asttokens==2.4.1
+black==24.4.2
 certifi==2024.2.2
 charset-normalizer==3.3.2
 click==8.1.7
@@ -27,11 +28,14 @@ matplotlib==3.9.0
 matplotlib-inline==0.1.7
 mccabe==0.7.0
 moviepy==1.0.3
+mypy-extensions==1.0.0
 nest-asyncio==1.6.0
 networkx==3.3
 numpy==1.26.4
+opencv-python==4.10.0.84
 packaging==24.0
 parso==0.8.4
+pathspec==0.12.1
 pexpect==4.9.0
 pillow==10.3.0
 platformdirs==4.2.2
@@ -52,6 +56,7 @@ scipy==1.13.1
 six==1.16.0
 stack-data==0.6.3
 tifffile==2024.5.22
+tomli==2.0.1
 tornado==6.4
 tqdm==4.66.4
 traitlets==5.14.3
