@@ -11,6 +11,7 @@ class Model {
 private:
     Real *phi, *A, *R, *area;
     Real *d_phi, *d_A, *d_R, *d_area, *d_collision_force, *d_buffer, *d_phi_t;
+    int *d_grid_min_x, *d_grid_min_y, *d_grid_max_x, *d_grid_max_y;
 
     Param p;
     Param *d_Param;
@@ -26,6 +27,9 @@ private:
     dim3 grid, block;
     void initializePhi();
     std::mutex fileMutex;
+
+    void rollAllFieldsX();
+    void rollAllFieldsY();
 
 public:
     Model(Param p);

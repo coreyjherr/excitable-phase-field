@@ -13,8 +13,8 @@ struct Param {
     Real gamma = 2;
     Real eps2 = 4;
     Real B_s = 10;
-    Real xi = 2;
-    Real alpha = 4;
+    Real xi = 4;
+    Real alpha = 5;
     Real k_a = 10;
     Real K = 1;
     Real b = 0.1;

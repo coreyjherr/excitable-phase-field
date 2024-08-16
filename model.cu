@@ -1,9 +1,8 @@
-#include "model.cuh"
-#include "error_check.cuh"
-#include <cmath>
+#include "include/model.cuh"
+#include "include/error_check.cuh"
 #include <cuda_runtime.h>
 #include <curand_kernel.h>
-#include "kernels.cuh"
+#include "include/kernels.cuh"
 #include <iostream>
 #include <fstream>
 #include <math.h>
@@ -42,6 +41,10 @@ Model::Model(Param param) {
     cudaErrCheck(cudaMalloc((void**)&d_collision_force, numCells*p.N*p.N*sizeof(Real)));
     cudaErrCheck(cudaMalloc((void**)&d_buffer, numCells*p.N*p.N*sizeof(Real)));
     cudaErrCheck(cudaMalloc((void**)&d_phi_t, numCells*p.N*p.N*sizeof(Real)));
+    cudaErrCheck(cudaMalloc((void**)&d_grid_min_x, numCells*sizeof(int)));
+    cudaErrCheck(cudaMalloc((void**)&d_grid_min_y, numCells*sizeof(int)));
+    cudaErrCheck(cudaMalloc((void**)&d_grid_max_x, numCells*sizeof(int)));
+    cudaErrCheck(cudaMalloc((void**)&d_grid_max_y, numCells*sizeof(int)));
 
     cudaErrCheck(cudaMemset(d_phi, 0, numCells*p.N*p.N*sizeof(Real)));
     cudaErrCheck(cudaMemset(d_A, 0, numCells*p.N*p.N*sizeof(Real)));
@@ -104,6 +107,64 @@ void Model::updateA() {
 void Model::updateR() {
     updateRKernel<<<grid, block>>>(d_phi, d_A, d_R, d_Param, d_phi_t, d_Rstates, d_buffer);
     cublasErrCheck(cublasSaxpy(handle, numCells*p.N*p.N, &(d_Param->dt), d_buffer, 1, d_R, 1));
+}
+
+void Model::rollAllFieldsX() {
+    rollGridXKernel<<<grid, block>>>(d_phi, d_buffer, d_grid_max_x, d_Param);
+    cublasErrCheck(cublasSswap(handle, numCells*p.N*p.N, d_buffer, 1, d_phi, 1));
+
+    rollGridXKernel<<<grid, block>>>(d_phi, d_buffer, d_grid_min_x, d_Param);
+    cublasErrCheck(cublasSswap(handle, numCells*p.N*p.N, d_buffer, 1, d_phi, 1));
+
+    rollGridXKernel<<<grid, block>>>(d_A, d_buffer, d_grid_max_x, d_Param);
+    cublasErrCheck(cublasSswap(handle, numCells*p.N*p.N, d_buffer, 1, d_A, 1));
+
+    rollGridXKernel<<<grid, block>>>(d_A, d_buffer, d_grid_min_x, d_Param);
+    cublasErrCheck(cublasSswap(handle, numCells*p.N*p.N, d_buffer, 1, d_A, 1));
+
+    rollGridXKernel<<<grid, block>>>(d_R, d_buffer, d_grid_max_x, d_Param);
+    cublasErrCheck(cublasSswap(handle, numCells*p.N*p.N, d_buffer, 1, d_R, 1));
+
+    rollGridXKernel<<<grid, block>>>(d_R, d_buffer, d_grid_min_x, d_Param);
+    cublasErrCheck(cublasSswap(handle, numCells*p.N*p.N, d_buffer, 1, d_R, 1));
+}
+
+void Model::rollAllFieldsY() {
+    rollGridYKernel<<<grid, block>>>(d_phi, d_buffer, d_grid_max_y, d_Param);
+    cublasErrCheck(cublasSswap(handle, numCells*p.N*p.N, d_buffer, 1, d_phi, 1));
+
+    rollGridYKernel<<<grid, block>>>(d_phi, d_buffer, d_grid_min_y, d_Param);
+    cublasErrCheck(cublasSswap(handle, numCells*p.N*p.N, d_buffer, 1, d_phi, 1));
+
+    rollGridYKernel<<<grid, block>>>(d_A, d_buffer, d_grid_max_y, d_Param);
+    cublasErrCheck(cublasSswap(handle, numCells*p.N*p.N, d_buffer, 1, d_A, 1));
+
+    rollGridYKernel<<<grid, block>>>(d_A, d_buffer, d_grid_min_y, d_Param);
+    cublasErrCheck(cublasSswap(handle, numCells*p.N*p.N, d_buffer, 1, d_A, 1));
+
+    rollGridYKernel<<<grid, block>>>(d_R, d_buffer, d_grid_max_y, d_Param);
+    cublasErrCheck(cublasSswap(handle, numCells*p.N*p.N, d_buffer, 1, d_R, 1));
+
+    rollGridYKernel<<<grid, block>>>(d_R, d_buffer, d_grid_min_y, d_Param);
+    cublasErrCheck(cublasSswap(handle, numCells*p.N*p.N, d_buffer, 1, d_R, 1));
+}
+
+
+void Model::updateGridLocation() {
+    getXIndexMaskedKernel<<<grid, block>>>(d_phi, d_buffer, d_Param);
+    for (int i = 0; i < numCells; ++i) {
+        cublasErrCheck(cublasIsamax(handle, p.N*p.N, d_buffer + i*p.N*p.N, 1, d_grid_max_x + i));
+        cublasErrCheck(cublasIsamin(handle, p.N*p.N, d_buffer + i*p.N*p.N, 1, d_grid_min_x + i));
+    }
+    rollAllFieldsX();
+
+    getYIndexMaskedKernel<<<grid, block>>>(d_phi, d_buffer, d_Param);
+    for (int i = 0; i < numCells; ++i) {
+        cublasErrCheck(cublasIsamax(handle, p.N*p.N, d_buffer + i*p.N*p.N, 1, d_grid_max_y + i));
+        cublasErrCheck(cublasIsamin(handle, p.N*p.N, d_buffer + i*p.N*p.N, 1, d_grid_min_y + i));
+    }
+    rollAllFieldsY();
+
 }
 
 void Model::write() {

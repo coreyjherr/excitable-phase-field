@@ -1,5 +1,5 @@
-#include "kernels.cuh"
-#include "params.cuh"
+#include "include/kernels.cuh"
+#include "include/params.cuh"
 #include <curand_kernel.h>
 
 __global__ void initializePhiKernel(Real* phi, Param* p) {
@@ -15,14 +15,87 @@ __global__ void initializePhiKernel(Real* phi, Param* p) {
     }
 } 
 
-__global__ void updateGridLocationKernel(Real* phi, int* gridLocation, Param* p) {
+__global__ void getXIndexMaskedKernel(Real* phi, Real* buffer, Param* p) {
     int i = blockIdx.x * blockDim.x + threadIdx.x;
     int j = blockIdx.y * blockDim.y + threadIdx.y;
     int k = blockIdx.z * blockDim.z + threadIdx.z;
 
     if (i < p->N && j < p->N && k < p->numCells) {
         int idx = k*p->N*p->N + j*p->N + i;
-        gridLocation[idx] = 0;
+        if (phi[idx] > 0.5)
+            buffer[idx] = i;
+        else
+            buffer[idx] = 0.0/0.0;
+    }
+}
+
+__global__ void getYIndexMaskedKernel(Real* phi, Real* buffer, Param* p) {
+    int i = blockIdx.x * blockDim.x + threadIdx.x;
+    int j = blockIdx.y * blockDim.y + threadIdx.y;
+    int k = blockIdx.z * blockDim.z + threadIdx.z;
+
+    if (i < p->N && j < p->N && k < p->numCells) {
+        int idx = k*p->N*p->N + j*p->N + i;
+        if (phi[idx] > 0.5)
+            buffer[idx] = j;
+        else
+            buffer[idx] = 0.0/0.0;
+    }
+}
+
+__global__ void rollGridXKernel(Real* phi, Real* buffer, int* d_grid_x, Param* p) {
+    int i = blockIdx.x * blockDim.x + threadIdx.x;
+    int j = blockIdx.y * blockDim.y + threadIdx.y;
+    int k = blockIdx.z * blockDim.z + threadIdx.z;
+    int N = p->N;
+
+    if (i < N && j < N && k < p->numCells) {
+        int idx = k*N*N + j*N + i;
+        int x_distance = d_grid_x[k]%N;
+        if (x_distance < N/8)
+        {
+            int shift = N/2 - x_distance;
+            int new_i = (i + shift) % N;
+            buffer[k*N*N + j*N + new_i] = phi[idx];
+        }
+        else if (x_distance > 7*N/8)
+        {
+            int shift = N/2 - x_distance;
+            int new_i = (i + shift + N) % N;
+            buffer[k*N*N + j*N + new_i] = phi[idx];
+        }
+        else
+        {
+            buffer[idx] = phi[idx];
+        }
+    }
+}
+
+__global__ void rollGridYKernel(Real* phi, Real* buffer, int* d_grid_y, Param* p) {
+    int i = blockIdx.x * blockDim.x + threadIdx.x;
+    int j = blockIdx.y * blockDim.y + threadIdx.y;
+    int k = blockIdx.z * blockDim.z + threadIdx.z;
+    int N = p->N;
+
+    if (i < N && j < N && k < p->numCells) {
+        int idx = k*N*N + j*N + i;
+        int y_distance = d_grid_y[k]/N;
+        if (y_distance < N/8)
+        {
+            int shift = N/2 - y_distance;
+            int new_j = (j + shift) % N;
+            buffer[k*N*N + new_j*N + i] = phi[idx];
+        }
+        else if (y_distance > 7*N/8)
+        {
+            int shift = N/2 - y_distance;
+            int new_j = (j + shift + N) % N;
+            buffer[k*N*N + new_j*N + i] = phi[idx];
+        }
+        else
+        {
+            buffer[idx] = phi[idx];
+        }
     }
 }
 

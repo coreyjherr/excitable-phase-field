@@ -6,3 +6,5 @@ results/
 compile_commands.json
 run_phase_field
 indicators.hpp
+*.dat
+*.mp4

@@ -1,15 +1,16 @@
-#include "model.cuh"
+#include "include/model.cuh"
 #include <iostream>
-#include "indicators.hpp"
+#include "include/indicators.hpp"
 #include <cstdlib>
 
 int main() {
     Param param;
-    float simulation_time = 100;
-    param.T = (int)(simulation_time / param.dt);
+    // float simulation_time = 500;
+    // param.T = (int)(simulation_time / param.dt);
+    param.T = 1000000;
     param.blind = 100;
-    param.xi = 4;
-    param.alpha = 5;
+    param.xi = 3;
+    param.alpha = 6;
     param.numCells = 1;
 
     using namespace indicators;
@@ -23,6 +24,7 @@ int main() {
     {
         if (t % param.blind == 0)
         {
+            model.updateGridLocation();
             model.writeArrayToFileInBackground();
         }
 
@@ -33,6 +35,12 @@ int main() {
         model.updateR();
 
     }
-    system("/home/cherr/workspace/stochastic_phase_field_model/create_video.py");
+
+    int call = system("/home/cherr/workspace/stochastic_phase_field_model/create_video.py");
+    if (call != 0)
+    {
+        std::cerr << "Error creating video" << std::endl;
+    }
+
     return 0;
 }
