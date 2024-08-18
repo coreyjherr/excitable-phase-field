@@ -9,9 +9,13 @@
 
 class Model {
 private:
+    int blockSizeX = 16;
+    int blockSizeY = 16;
+    int blockSizeZ = 1;
+
     Real *phi, *A, *R, *area;
     Real *d_phi, *d_A, *d_R, *d_area, *d_collision_force, *d_buffer, *d_phi_t;
-    int *d_grid_min_x, *d_grid_min_y, *d_grid_max_x, *d_grid_max_y;
+    int2 *d_grid_location, *grid_location, *d_grid_min, *d_grid_max;
 
     Param p;
     Param *d_Param;
@@ -21,8 +25,7 @@ private:
     cublasHandle_t handle;
 
     curandState *d_states, *d_Rstates;
-    std::ofstream phi_output;
-    std::ofstream A_output;
+    std::ofstream phi_output, A_output, grid_location_output;
 
     dim3 grid, block;
     void initializePhi();
@@ -30,6 +33,8 @@ private:
 
     void rollAllFieldsX();
     void rollAllFieldsY();
+    void initializeCellGrid();
+    void writeArray();
 
 public:
     Model(Param p);
@@ -39,9 +44,9 @@ public:
     void updateR();
     void updateArea();
     void updateGridLocation();
+    void updateCollisionForce();
     void write();
-    void writeArray();
-    void writeArrayToFileInBackground();
+    void writeInBackground();
 };
 
 

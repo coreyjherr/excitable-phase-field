@@ -15,7 +15,9 @@ __global__ void updateRKernel(Real* phi, Real* A, Real* R, Param* p, Real* phi_t
 __global__ void setupCurandStates(curandState *state, unsigned long long seed, Param* p);
 __global__ void getYIndexMaskedKernel(Real* phi, Real* buffer, Param* p);
 __global__ void getXIndexMaskedKernel(Real* phi, Real* buffer, Param* p);
-__global__ void rollGridYKernel(Real* phi, Real* buffer, int* d_grid_y, Param* p);
-__global__ void rollGridXKernel(Real* phi, Real* buffer, int* d_grid_x, Param* p);
+__global__ void rollGridYKernel(Real* phi, Real* buffer, int2* d_grid, Param* p);
+__global__ void rollGridXKernel(Real* phi, Real* buffer, int2* d_grid, Param* p);
+__global__ void updateGridLocationKernel(int2* d_grid_minmax, int2* d_grid_location, Param* p);
+__global__ void updateCollisionForceKernel(Real* phi, int2* grid_locations, Param* p, Real* collision_force);
 
 #endif // KERNELS_CUH

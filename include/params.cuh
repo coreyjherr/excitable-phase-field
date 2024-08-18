@@ -2,6 +2,9 @@
 #define PARAMS_CUH
 
 typedef float Real;
+typedef float2 Real2;
+#define FLOAT
+
 
 struct Param { 
     int N = 256;
@@ -33,7 +36,7 @@ struct Param {
     Real m_repulsion = 10;
     int numCells = 1;
 
-    int  initial_offset_x = 0;
+    int  initial_offset_x = 40;
     int initial_offset_y = 0;
 } typedef Param;
 #endif // PARAMS_CUH

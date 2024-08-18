@@ -43,7 +43,7 @@ __global__ void getYIndexMaskedKernel(Real* phi, Real* buffer, Param* p) {
     }
 }
 
-__global__ void rollGridXKernel(Real* phi, Real* buffer, int* d_grid_x, Param* p) {
+__global__ void rollGridXKernel(Real* phi, Real* buffer, int2* d_grid, Param* p) {
     int i = blockIdx.x * blockDim.x + threadIdx.x;
     int j = blockIdx.y * blockDim.y + threadIdx.y;
     int k = blockIdx.z * blockDim.z + threadIdx.z;
@@ -51,16 +51,17 @@ __global__ void rollGridXKernel(Real* phi, Real* buffer, int* d_grid_x, Param* p
 
     if (i < N && j < N && k < p->numCells) {
         int idx = k*N*N + j*N + i;
-        int x_distance = d_grid_x[k]%N;
+        // cublas uses 1 based indexing
+        int x_distance = (d_grid[k].x-1)%N;
         if (x_distance < N/8)
         {
-            int shift = N/2 - x_distance;
+            int shift = N/2 - N/8;
             int new_i = (i + shift) % N;
             buffer[k*N*N + j*N + new_i] = phi[idx];
         }
         else if (x_distance > 7*N/8)
         {
-            int shift = N/2 - x_distance;
+            int shift = N/2 - 7*N/8;
             int new_i = (i + shift + N) % N;
             buffer[k*N*N + j*N + new_i] = phi[idx];
         }
@@ -71,7 +72,7 @@ __global__ void rollGridXKernel(Real* phi, Real* buffer, int* d_grid_x, Param* p
     }
 }
 
-__global__ void rollGridYKernel(Real* phi, Real* buffer, int* d_grid_y, Param* p) {
+__global__ void rollGridYKernel(Real* phi, Real* buffer, int2* d_grid, Param* p) {
     int i = blockIdx.x * blockDim.x + threadIdx.x;
     int j = blockIdx.y * blockDim.y + threadIdx.y;
     int k = blockIdx.z * blockDim.z + threadIdx.z;
@@ -79,16 +80,16 @@ __global__ void rollGridYKernel(Real* phi, Real* buffer, int* d_grid_y, Param* p
 
     if (i < N && j < N && k < p->numCells) {
         int idx = k*N*N + j*N + i;
-        int y_distance = d_grid_y[k]/N;
-        if (y_distance < N/8)
+        int y_distance = (d_grid[k].y-1)/N;
+        if (y_distance < N/8 )
         {
-            int shift = N/2 - y_distance;
+            int shift = N/2 - N/8;
             int new_j = (j + shift) % N;
             buffer[k*N*N + new_j*N + i] = phi[idx];
         }
         else if (y_distance > 7*N/8)
         {
-            int shift = N/2 - y_distance;
+            int shift = N/2 - 7*N/8;
             int new_j = (j + shift + N) % N;
             buffer[k*N*N + new_j*N + i] = phi[idx];
         }
@@ -99,9 +100,39 @@ __global__ void rollGridYKernel(Real* phi, Real* buffer, int* d_grid_y, Param* p
     }
 }
 
+__global__ void updateGridLocationKernel(int2* d_grid_minmax, int2* d_grid_location, Param* p) {
+    int k = blockIdx.x * blockDim.x + threadIdx.x;
+    if (k < p->numCells) {
+        int2 minmax = d_grid_minmax[k];
+        int N = p->N;
+
+        int x_distance = (minmax.x-1)%N;
+        int y_distance = (minmax.y-1)/N;
+
+        if (x_distance < N/8)
+        {
+            d_grid_location[k].x -= N/2 - N/8;
+        }
+        else if (x_distance > 7*N/8)
+        {
+            d_grid_location[k].x -= N/2 - 7*N/8;
+        }
+
+        if (y_distance < N/8)
+        {
+            d_grid_location[k].y -= N/2 - N/8;
+        }
+        else if (y_distance > 7*N/8)
+        {
+            d_grid_location[k].y -= N/2 - 7*N/8;
+        }
+    }
+}
+
 __device__ __forceinline__
 Real laplacian(Real* phi, int i, int j, int k, Param* p) {
     int N = p->N;
+
 
     int i1 = (i + 1) % N;
     int i2 = (i - 1 + N) % N;
@@ -154,8 +185,8 @@ __global__ void updatePhiKernel(Real* phi, Real* A, Real* R, Param *p, Real* are
         Real phi_y = derivativeY(phi, i, j, k, p);
 
         dphi += sqrt(phi_x * phi_x + phi_y * phi_y) *
-                (-p->B_s * (area[k]*p->dx*p->dx - p->S0) + p->alpha * A[idx] * phi_ -
-                 p->m_repulsion * phi_*collision_force[idx]);
+                (-p->B_s * (area[k]*p->dx*p->dx - p->S0) + p->alpha * A[idx] * phi_
+                 -p->m_repulsion * collision_force[idx]);
 
         buffer[idx] = dphi/p->xi;
     }
@@ -238,6 +269,32 @@ __global__ void updateRKernel(Real* phi, Real* A, Real* R, Param* p, Real* phi_t
         else {
             buffer[idx] = -R_/p->dt;
         }
+    }
+}
+
+__global__ void updateCollisionForceKernel(Real* phi, int2* grid_locations, Param* p, Real* collision_force) {
+    int i = blockIdx.x * blockDim.x + threadIdx.x;
+    int j = blockIdx.y * blockDim.y + threadIdx.y;
+    int k = blockIdx.z * blockDim.z + threadIdx.z;
+
+    int N = p->N;
+
+    if (i < N && j < N && k < p->numCells) {
+        int idx = k*N*N + j*N + i;
+        Real phi_ = phi[idx];
+        Real force = 0;
+        for (int l = 0; l < p->numCells; ++l) {
+            if (l != k) {
+                int dx = grid_locations[l].x - grid_locations[k].x;
+                int dy = grid_locations[l].y - grid_locations[k].y;
+                if ((i-dx) >= 0 && (i-dx) < N && (j-dy) >= 0 && (j-dy) < N) {
+                    int idx_ = l*N*N + (j - dy)*N + (i - dx);
+                    Real phi_l = phi[idx_];
+                    force += phi_*phi_ * phi_l*phi_l;
+                }
+            }
+        }
+        collision_force[idx] = force;
     }
 }
 
