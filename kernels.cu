@@ -196,7 +196,7 @@ __global__ void updatePhiKernel(Real* phi, Real* A, Real* R, Param *p, Real* are
 
         dphi += sqrt(phi_x * phi_x + phi_y * phi_y) *
                 (-p->B_s * (area[k]*p->dx*p->dx - p->S0) + p->alpha * A[idx] * phi_
-                 -p->m_repulsion * collision_force[idx] - p->m_repulsion*wall_force);
+                 -collision_force[idx] - p->m_repulsion*wall_force);
 
         buffer[idx] = dphi/p->xi;
     }
@@ -300,7 +300,9 @@ __global__ void updateCollisionForceKernel(Real* phi, int2* grid_locations, Para
                 if ((i-dx) >= 0 && (i-dx) < N && (j-dy) >= 0 && (j-dy) < N) {
                     int idx_ = l*N*N + (j - dy)*N + (i - dx);
                     Real phi_l = phi[idx_];
-                    force += phi_*phi_ * phi_l*phi_l;
+                    force += p->m_repulsion*phi_*phi_ * phi_l*phi_l;
+                    force += p->m_adhesion*(derivativeX(phi, i, j, k, p)*derivativeX(phi, i-dx, j-dy, l, p) +
+                                            derivativeY(phi, i, j, k, p)*derivativeY(phi, i-dx, j-dy, l, p));
                 }
             }
         }

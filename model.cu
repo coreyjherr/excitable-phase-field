@@ -165,7 +165,7 @@ void Model::simulate(bool progressBar) {
     for (int t = 0; t < p.T; t++) {
         if (t % p.blind == 0) {
             updateGridLocation();
-            writeInBackground();
+            write();
         }
 
         updateCollisionForce();

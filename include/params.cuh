@@ -40,6 +40,7 @@ struct Param {
     int  initial_offset_x = 40;
     int initial_offset_y = 0;
     Real R_wall = 20;
+    Real m_adhesion = 1;
 } typedef Param;
 
 inline void writeParamFile(std::string filename, Param param) {
@@ -74,6 +75,7 @@ inline void writeParamFile(std::string filename, Param param) {
     fout << "initial_offset_x " << param.initial_offset_x << std::endl;
     fout << "initial_offset_y " << param.initial_offset_y << std::endl;
     fout << "R_wall " << param.R_wall << std::endl;
+    fout << "m_adhesion " << param.m_adhesion << std::endl;
     fout.close();
 }
 

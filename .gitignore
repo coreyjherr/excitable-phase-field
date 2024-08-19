@@ -1,10 +1,10 @@
 .venv
 __pycache__/
 build/
-results/
 .cache/
 compile_commands.json
 run_phase_field
 indicators.hpp
 *.dat
 *.mp4
+*.txt

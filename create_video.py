@@ -86,29 +86,47 @@ def plot_center_of_mass(phi, directions):
 
     return fig, ax
 
-import os
-if __name__ == '__main__':
-    # read the numpy array from the binary file
-    filename_A = 'results/A.dat'
-    filename_phi = 'results/phi.dat'
-    filename_directions = 'results/direction.dat'
+def get_wall_matrix(shape, radius):
+    wall = np.zeros(shape)
+    x = (np.arange(wall.shape[0])-wall.shape[0]//2) * 0.2
+    X, Y = np.meshgrid(x, x)
+    # draw the wall between r>20 r<21
+    wall[np.logical_and(X**2+Y**2>radius**2, X**2+Y**2<(radius+1)**2)] = 1
+    return wall
+from pathlib import Path
 
-    directions = np.fromfile(filename_directions, dtype=np.int32)
+def create_video_from_binary(phi_filename: Path, A_filename: Path, directions_filename: Path):
+    movie_path = Path('movies')
+    directions = np.fromfile(directions_filename, dtype=np.int32)
     numCells = directions[0]
     directions = directions[1:].reshape(-1, 2)
     directions = directions[:, ::-1]
     directions = np.array([directions[i::numCells] for i in range(numCells)])
 
-    # phi_all = create_composite_array_streaming(filename_phi, None, directions, numCells, 256)
-    # nparray_to_video('phi.mp4', phi_all, fps=60)
+    phi_all = create_composite_array_streaming(phi_filename, None, directions, numCells, 256)
+    phi_movie_filename = movie_path/phi_filename.with_suffix('.mp4').name
+    nparray_to_video(str(phi_movie_filename), phi_all, fps=60)
 
-    # pad the composite array so the width and heigh are divisible by 2
-    A_all = create_composite_array_streaming(filename_phi, filename_A, directions, numCells, 256)
-    # wall = np.zeros_like(A_all[0])
-    # x = (np.arange(wall.shape[0])-wall.shape[0]//2) * 0.2
-    # X, Y = np.meshgrid(x, x)
-    # # draw the wall between r>20 r<21
-    # wall[np.logical_and(X**2+Y**2>20**2, X**2+Y**2<21**2)] = 1
-    # A_all += wall[None, :, :]
+    A_all = create_composite_array_streaming(filename_phi, A_filename, directions, numCells, 256)
+    A_movie_filename = movie_path/A_filename.with_suffix('.mp4').name
+    nparray_to_video(str(A_movie_filename), A_all, fps=60)
 
-    nparray_to_video('A.mp4', A_all, fps=60)
+import os,sys
+def cleanup(phi_filename: Path, A_filename: Path, directions_filename: Path):
+    params_dir = Path('params')
+    param_filename = Path(str(phi_filename).replace('phi', 'param'))
+    param_filename.rename(params_dir/param_filename.name)
+    phi_filename.unlink()
+    A_filename.unlink()
+    directions_filename.unlink()
+
+
+if __name__ == '__main__':
+    # read the numpy array from the binary file
+    results_dir = Path('results')
+    for filename_phi in results_dir.glob('phi*.dat'):
+        filename_directions = Path(str(filename_phi).replace('phi', 'grid_location'))
+        filename_A = Path(str(filename_phi).replace('phi', 'A'))
+        create_video_from_binary(filename_phi, filename_A, filename_directions)
+        if len(sys.argv) > 1 and sys.argv[1] == 'delete':
+            cleanup(filename_phi, filename_A, filename_directions)
