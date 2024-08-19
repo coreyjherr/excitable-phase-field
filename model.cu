@@ -4,10 +4,13 @@
 #include <cuda_runtime.h>
 #include <curand_kernel.h>
 #include "include/kernels.cuh"
+#include "include/params.cuh"
 #include <iostream>
 #include <fstream>
 #include <math.h>
 #include <thread>
+#include <sstream>
+#include <iomanip>
 
 #define USE_FLOAT
 
@@ -31,6 +34,7 @@ Model::Model(Param param, int deviceID) {
 
     p = param;
     p.S0 = M_PI*p.r0*p.r0;
+    p.R_wall = p.r0*sqrt(p.numCells);
 
     numCells = p.numCells;
 
@@ -40,7 +44,8 @@ Model::Model(Param param, int deviceID) {
     area = new Real[numCells];
     grid_location = new int2[numCells];
 
-    cudaErrCheck(cudaSetDevice(deviceID));
+    deviceID_ = deviceID;
+    cudaErrCheck(cudaSetDevice(deviceID_));
 
     block = dim3(blockSizeX, blockSizeY, blockSizeZ);
     grid = dim3((p.N + blockSizeX - 1) / blockSizeX, (p.N + blockSizeY - 1) / blockSizeY, (numCells + blockSizeZ - 1) / blockSizeZ);
@@ -86,9 +91,7 @@ Model::Model(Param param, int deviceID) {
     setupCurandStates<<<grid, block>>>(d_Rstates, 1, d_Param);
     curandErrCheck(cudaGetLastError());
 
-    phi_output = std::ofstream("results/phi.dat", std::ios::out | std::ios::binary);
-    A_output = std::ofstream("results/A.dat", std::ios::out | std::ios::binary);
-    grid_location_output = std::ofstream("results/direction.dat", std::ios::out | std::ios::binary);
+    setupOutput();
     grid_location_output.write(reinterpret_cast<char*>(&numCells), sizeof(int));
 
 }
@@ -125,15 +128,30 @@ Model::~Model() {
 }
 
 void Model::initializeCellGrid() {
-    int sqrt_numCells = sqrt(1.0*numCells)+1;
-    for (int i = 0; i < sqrt_numCells; ++i) {
-        for (int j = 0; j < sqrt_numCells; ++j) {
-            if (i*sqrt_numCells + j >= numCells) {
-                break;
-            }
-            grid_location[i*sqrt_numCells + j].x = p.initial_offset_x*j;
-            grid_location[i*sqrt_numCells + j].y = p.initial_offset_y*i;
-        }
+    // int sqrt_numCells = sqrt(1.0*numCells)+1;
+    // for (int i = 0; i < sqrt_numCells; ++i) {
+    //     for (int j = 0; j < sqrt_numCells; ++j) {
+    //         if (i*sqrt_numCells + j >= numCells) {
+    //             break;
+    //         }
+    //         grid_location[i*sqrt_numCells + j].x = p.initial_offset_x*i;
+    //         grid_location[i*sqrt_numCells + j].y = p.initial_offset_y*j;
+    //     }
+    // }
+
+    Real phi = (1 + sqrt(5))/2;
+    for (int i = 0; i < numCells; ++i) {
+        int k = i+1;
+        int b = round(2*sqrt(numCells));
+        Real r;
+        if (k > numCells-b)
+            r  = 1;
+        else
+            r = sqrt(1.0*k-0.5)/sqrt(1.0*numCells - (1.0*b+1)/2);
+        Real theta = 2*M_PI*k/(phi*phi);
+        Real rCircle = (sqrt(numCells)-1)*p.r0*r;
+        grid_location[i].x = rCircle/p.dx*cos(theta);
+        grid_location[i].y = rCircle/p.dx*sin(theta);
     }
 }
 
@@ -170,7 +188,7 @@ void Model::updateArea() {
 }
 
 void Model::updatePhi() {
-    updatePhiKernel<<<grid, block>>>(d_phi, d_A, d_R, d_Param, d_area, d_collision_force, d_phi_t);
+    updatePhiKernel<<<grid, block>>>(d_phi, d_A, d_R, d_Param, d_area, d_grid_location, d_collision_force, d_phi_t);
     cublasErrCheck(cublasAxpy(handle, numCells*p.N*p.N, &(d_Param->dt), d_phi_t, 1, d_phi, 1));
 }
 
@@ -277,4 +295,25 @@ void Model::writeInBackground() {
     std::thread backgroundThread(&Model::writeArray, this);
     backgroundThread.detach(); // Detach the thread to run in the background
     
+}
+
+void Model::setupOutput() {
+    using std::string;
+    string base_path = "results/";
+    // Get the current time and date
+    std::ostringstream oss;
+    auto t = std::time(nullptr);
+    auto tm = *std::localtime(&t);
+    oss << std::put_time(&tm, "%Y%m%d_%H%M%S");
+    string time_str = oss.str();
+    time_str += "_" + std::to_string(deviceID_);
+
+    string phi_filestring = base_path + "phi_" + time_str + ".dat";
+    string A_filestring = base_path + "A_" + time_str + ".dat";
+    string grid_location_filestring = base_path + "grid_location_" + time_str + ".dat";
+
+    writeParamFile(base_path + "param_" + time_str + ".dat", p);
+    phi_output = std::ofstream(phi_filestring, std::ios::out | std::ios::binary);
+    A_output = std::ofstream(A_filestring, std::ios::out | std::ios::binary);
+    grid_location_output = std::ofstream(grid_location_filestring, std::ios::out | std::ios::binary);
 }

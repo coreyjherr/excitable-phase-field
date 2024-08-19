@@ -148,7 +148,7 @@ Real laplacian(Real* phi, int i, int j, int k, Param* p) {
             phi[k * N * N + j * N + i2] -
             4 * phi[k * N * N + j * N + i]) /
            (p->dx * p->dx);
-}
+} 
 
 __device__ __forceinline__
 Real derivativeX(Real* phi, int i, int j, int k, Param* p) {
@@ -168,7 +168,7 @@ Real derivativeY(Real* phi, int i, int j, int k, Param* p) {
     return (phi[k * N * N + j1 * N + i] - phi[k * N * N + j2 * N + i]) / (2 * p->dx);
 }
 
-__global__ void updatePhiKernel(Real* phi, Real* A, Real* R, Param *p, Real* area, Real* collision_force, Real* buffer) {
+__global__ void updatePhiKernel(Real* phi, Real* A, Real* R, Param *p, Real* area, int2 *grid_location, Real* collision_force, Real* buffer) {
     int i = blockIdx.x * blockDim.x + threadIdx.x;
     int j = blockIdx.y * blockDim.y + threadIdx.y;
     int k = blockIdx.z * blockDim.z + threadIdx.z;
@@ -187,9 +187,16 @@ __global__ void updatePhiKernel(Real* phi, Real* A, Real* R, Param *p, Real* are
         Real phi_x = derivativeX(phi, i, j, k, p);
         Real phi_y = derivativeY(phi, i, j, k, p);
 
+        const int2 thread_loc = {grid_location[k].x + i-N/2, grid_location[k].y + j -N/2};
+        Real wall_force = 0;
+        if (thread_loc.x*thread_loc.x + thread_loc.y*thread_loc.y > p->R_wall*p->R_wall/(p->dx*p->dx))
+            wall_force = phi_*phi_;
+
+
+
         dphi += sqrt(phi_x * phi_x + phi_y * phi_y) *
                 (-p->B_s * (area[k]*p->dx*p->dx - p->S0) + p->alpha * A[idx] * phi_
-                 -p->m_repulsion * collision_force[idx]);
+                 -p->m_repulsion * collision_force[idx] - p->m_repulsion*wall_force);
 
         buffer[idx] = dphi/p->xi;
     }

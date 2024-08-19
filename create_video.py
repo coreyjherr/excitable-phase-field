@@ -58,19 +58,21 @@ def create_composite_array_streaming(phi_filename, A_filename, directions, numCe
     shape_y = max_y-min_y+N
     if shape_y % 2 != 0:
         shape_y += 1
-    composite_array_phi = np.zeros((T, shape_x, shape_y))
-    composite_array_A = np.zeros((T, shape_x, shape_y)) 
+    composite_array = np.zeros((T, shape_x, shape_y))
     directions = directions.astype(int)
     for t in trange(T):
         phi = np.fromfile(phi_filename, dtype=np.float32, count=numCells*N*N, offset=t*numCells*N*N*4).reshape(numCells, N, N)
-        A = np.fromfile(A_filename, dtype=np.float32, count=numCells*N*N, offset=t*numCells*N*N*4).reshape(numCells, N, N)
+        if A_filename is not None:
+            A = np.fromfile(A_filename, dtype=np.float32, count=numCells*N*N, offset=t*numCells*N*N*4).reshape(numCells, N, N)
         for j in range(numCells):
             xi = int(directions[j,t,0])-min_x
             yi = int(directions[j,t,1])-min_y
-            composite_array_phi[t, xi:xi+N, yi:yi+N] += phi[j]
-            composite_array_A[t, xi:xi+N, yi:yi+N] += A[j]*phi[j]
+            if A_filename is None:
+                composite_array[t, xi:xi+N, yi:yi+N] += phi[j]
+            else:
+                composite_array[t, xi:xi+N, yi:yi+N] += A[j]*phi[j]
 
-    return composite_array_phi, composite_array_A
+    return composite_array
 
 def plot_center_of_mass(phi, directions):
     com = np.array( [find_center_of_mass(phi[i], directions[i]) for i in range(numCells)] )
@@ -97,8 +99,16 @@ if __name__ == '__main__':
     directions = directions[:, ::-1]
     directions = np.array([directions[i::numCells] for i in range(numCells)])
 
-    phi_all, A_all = create_composite_array_streaming(filename_phi, filename_A, directions, numCells, 256)
+    # phi_all = create_composite_array_streaming(filename_phi, None, directions, numCells, 256)
+    # nparray_to_video('phi.mp4', phi_all, fps=60)
 
     # pad the composite array so the width and heigh are divisible by 2
-    nparray_to_video('phi.mp4', phi_all, fps=60)
+    A_all = create_composite_array_streaming(filename_phi, filename_A, directions, numCells, 256)
+    # wall = np.zeros_like(A_all[0])
+    # x = (np.arange(wall.shape[0])-wall.shape[0]//2) * 0.2
+    # X, Y = np.meshgrid(x, x)
+    # # draw the wall between r>20 r<21
+    # wall[np.logical_and(X**2+Y**2>20**2, X**2+Y**2<21**2)] = 1
+    # A_all += wall[None, :, :]
+
     nparray_to_video('A.mp4', A_all, fps=60)

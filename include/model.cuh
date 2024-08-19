@@ -20,7 +20,7 @@ private:
     Param p;
     Param *d_Param;
 
-    int numCells;
+    int numCells, deviceID_;
 
     cublasHandle_t handle;
 
@@ -35,6 +35,7 @@ private:
     void rollAllFieldsY();
     void initializeCellGrid();
     void writeArray();
+    void setupOutput();
 
 public:
     Model(Param p, int deviceID = 0);
