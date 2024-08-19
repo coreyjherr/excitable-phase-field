@@ -100,5 +100,5 @@ if __name__ == '__main__':
     phi_all, A_all = create_composite_array_streaming(filename_phi, filename_A, directions, numCells, 256)
 
     # pad the composite array so the width and heigh are divisible by 2
-    nparray_to_video('phi.mp4', phi_all, fps=120)
-    nparray_to_video('A.mp4', A_all, fps=120)
+    nparray_to_video('phi.mp4', phi_all, fps=60)
+    nparray_to_video('A.mp4', A_all, fps=60)

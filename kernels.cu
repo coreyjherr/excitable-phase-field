@@ -6,11 +6,12 @@ __global__ void initializePhiKernel(Real* phi, Param* p) {
     int i = blockIdx.x * blockDim.x + threadIdx.x;
     int j = blockIdx.y * blockDim.y + threadIdx.y;
     int k = blockIdx.z * blockDim.z + threadIdx.z;
+    int N = p->N;
 
-    if (i < p->N && j < p->N && k < p->numCells) {
-        int idx = k*p->N*p->N + j*p->N + i;
-        Real x = (i-(Real)p->N/2)*p->dx;
-        Real y = (j-(Real)p->N/2)*p->dx;
+    if (i < N && j < N && k < p->numCells) {
+        int idx = k*N*N + j*N + i;
+        Real x = (i-(Real)N/2)*p->dx;
+        Real y = (j-(Real)N/2)*p->dx;
         phi[idx] = 0.5*(1-tanh(3*(sqrt(x*x + y*y) - p->r0)/sqrt(p->eps2)));
     }
 } 
@@ -19,9 +20,10 @@ __global__ void getXIndexMaskedKernel(Real* phi, Real* buffer, Param* p) {
     int i = blockIdx.x * blockDim.x + threadIdx.x;
     int j = blockIdx.y * blockDim.y + threadIdx.y;
     int k = blockIdx.z * blockDim.z + threadIdx.z;
+    int N = p->N;
 
-    if (i < p->N && j < p->N && k < p->numCells) {
-        int idx = k*p->N*p->N + j*p->N + i;
+    if (i < N && j < N && k < p->numCells) {
+        int idx = k*N*N + j*N + i;
         if (phi[idx] > 0.5)
             buffer[idx] = i;
         else
@@ -33,9 +35,10 @@ __global__ void getYIndexMaskedKernel(Real* phi, Real* buffer, Param* p) {
     int i = blockIdx.x * blockDim.x + threadIdx.x;
     int j = blockIdx.y * blockDim.y + threadIdx.y;
     int k = blockIdx.z * blockDim.z + threadIdx.z;
+    int N = p->N;
 
-    if (i < p->N && j < p->N && k < p->numCells) {
-        int idx = k*p->N*p->N + j*p->N + i;
+    if (i < N && j < N && k < p->numCells) {
+        int idx = k*N*N + j*N + i;
         if (phi[idx] > 0.5)
             buffer[idx] = j;
         else

@@ -1,3 +1,4 @@
+#include "include/indicators.hpp"
 #include "include/model.cuh"
 #include "include/error_check.cuh"
 #include <cuda_runtime.h>
@@ -26,7 +27,7 @@
 #endif
 
 
-Model::Model(Param param) {
+Model::Model(Param param, int deviceID) {
 
     p = param;
     p.S0 = M_PI*p.r0*p.r0;
@@ -39,7 +40,7 @@ Model::Model(Param param) {
     area = new Real[numCells];
     grid_location = new int2[numCells];
 
-    cudaErrCheck(cudaSetDevice(0));
+    cudaErrCheck(cudaSetDevice(deviceID));
 
     block = dim3(blockSizeX, blockSizeY, blockSizeZ);
     grid = dim3((p.N + blockSizeX - 1) / blockSizeX, (p.N + blockSizeY - 1) / blockSizeY, (numCells + blockSizeZ - 1) / blockSizeZ);
@@ -124,7 +125,7 @@ Model::~Model() {
 }
 
 void Model::initializeCellGrid() {
-    int sqrt_numCells = sqrt(1.0*numCells);
+    int sqrt_numCells = sqrt(1.0*numCells)+1;
     for (int i = 0; i < sqrt_numCells; ++i) {
         for (int j = 0; j < sqrt_numCells; ++j) {
             if (i*sqrt_numCells + j >= numCells) {
@@ -132,6 +133,31 @@ void Model::initializeCellGrid() {
             }
             grid_location[i*sqrt_numCells + j].x = p.initial_offset_x*j;
             grid_location[i*sqrt_numCells + j].y = p.initial_offset_y*i;
+        }
+    }
+}
+
+void Model::simulate(bool progressBar) {
+    using namespace indicators;
+    BlockProgressBar bar{
+        option::BarWidth{80}, option::ForegroundColor{Color::white},
+        option::FontStyles{std::vector<FontStyle>{FontStyle::bold}},
+        option::MaxProgress{p.T}, option::ShowElapsedTime{true},option::ShowRemainingTime{true}};
+
+    for (int t = 0; t < p.T; t++) {
+        if (t % p.blind == 0) {
+            updateGridLocation();
+            writeInBackground();
+        }
+
+        updateCollisionForce();
+        updateArea();
+        updatePhi();
+        updateA();
+        updateR();
+
+        if (progressBar) {
+            bar.tick();
         }
     }
 }

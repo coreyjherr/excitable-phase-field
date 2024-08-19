@@ -37,8 +37,9 @@ private:
     void writeArray();
 
 public:
-    Model(Param p);
+    Model(Param p, int deviceID = 0);
     ~Model();
+    void simulate(bool progressBar = true);
     void updatePhi();
     void updateA();
     void updateR();
