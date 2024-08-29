@@ -16,6 +16,7 @@ private:
     Real *phi, *A, *R, *area;
     Real *d_phi, *d_A, *d_R, *d_area, *d_collision_force, *d_buffer, *d_phi_t;
     int2 *d_grid_location, *grid_location, *d_grid_min, *d_grid_max;
+    Real2 *com, *d_com;
 
     Param p;
     Param *d_Param;
@@ -25,7 +26,7 @@ private:
     cublasHandle_t handle;
 
     curandState *d_states, *d_Rstates;
-    std::ofstream phi_output, A_output, grid_location_output;
+    std::ofstream phi_output, A_output, grid_location_output, com_output;
 
     dim3 grid, block;
     void initializePhi();
@@ -34,21 +35,23 @@ private:
     void rollAllFieldsX();
     void rollAllFieldsY();
     void initializeCellGrid();
-    void writeArray();
     void setupOutput();
 
 public:
     Model(Param p, int deviceID = 0);
     ~Model();
-    void simulate(bool progressBar = true);
-    void updatePhi();
+    void simulate(bool progressBar = true, bool useCondensedOutput = false);
+    void updatePhi(int t);
     void updateA();
     void updateR();
     void updateArea();
     void updateGridLocation();
     void updateCollisionForce();
-    void write();
-    void writeInBackground();
+    void updateBoundingBox();
+    void write(bool useCondensedOutput=false);
+    void writeInBackground(bool useCondensedOutput=false);
+    void updateCOM();
+    void makeCondensedOutput(Real* field1, Real* field2,std::ofstream& outputField);
 };
 
 

@@ -5,3 +5,5 @@ CompileFlags:
     - --generate-code=arch=compute_52,code=[compute_52,sm_52]
     - -ccbin=/usr/bin/g++-11
     - -forward-unknown-to-host-compiler
+    - -rdc
+    - -std=gnu++11

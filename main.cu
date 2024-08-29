@@ -5,25 +5,35 @@
 #include <thread>
 #include <vector>
 
-int main() {
+int main(int argc, char const *argv[]) {
     using std::vector;
     using std::thread;
-    vector<Real> adhesion = {5, 10, 15, 20};
+    vector<Real> alpha = {3, 4, 5, 6};
+    vector<Real> adhesion = {0, 1, 3, 5, 7, 10};
+
+    if (argc != 2)
+    {
+        std::cout << "Usage: ./main <adhesion_index>" << std::endl;
+        return 1;
+    }
+    int j = std::atoi(argv[1]);
 
     // create a vector of 4 threads, each thread will run a simulation
     vector<thread> threads;
     for (int i = 0; i < 4; i++)
     {
-        threads.push_back(thread([i, adhesion](){
+        threads.push_back(thread([i,j, adhesion, alpha](){
             Param param;
-            param.T = 100/0.001;
-            param.alpha = 6;
-            param.numCells = 100;
-            param.m_adhesion = adhesion[i];
+            param.T = 1000/0.001;
+            // param.T = 10000;
+            param.alpha = alpha[i];
+            param.numCells = 128;
+            param.m_repulsion = 30;
+            param.m_adhesion = adhesion[j];
 
             Model model(param, i);
-            bool progressBar = true ? i == 0 : false;
-            model.simulate(progressBar);
+            bool progressBar = i==3;
+            model.simulate(progressBar, true);
         }));
     }
     // join all threads
@@ -31,22 +41,6 @@ int main() {
     {
         t.join();
     }
-
-    // Param param;
-    // param.T = 20/0.001;
-    // param.alpha = 5.0;
-    // param.numCells = 100;
-    //
-    // {
-    //     Model model(param, 1);
-    //     model.simulate();
-    // }
-    
-    // int call = system("/home/cherr/workspace/stochastic_phase_field_model/create_video.py");
-    // if (call != 0)
-    // {
-    //     std::cerr << "Error creating video" << std::endl;
-    // }
 
     return 0;
 }

@@ -16,7 +16,19 @@ __global__ void initializePhiKernel(Real* phi, Param* p) {
     }
 } 
 
-__global__ void getXIndexMaskedKernel(Real* phi, Real* buffer, Param* p) {
+__global__ void updateBoundingIndex(int2* grid_cublas_index, Param* p)
+{
+    int i = blockIdx.x * blockDim.x + threadIdx.x;
+
+    if (i < p->numCells) {
+        int2 minmax = grid_cublas_index[i];
+        int N = p->N;
+        grid_cublas_index[i].x = (minmax.x-1)%N;
+        grid_cublas_index[i].y = (minmax.y-1)/N;
+    }
+}
+
+__global__ void getXIndexMaskedKernel(Real* phi, Real* buffer, Param* p, Real cutoff) {
     int i = blockIdx.x * blockDim.x + threadIdx.x;
     int j = blockIdx.y * blockDim.y + threadIdx.y;
     int k = blockIdx.z * blockDim.z + threadIdx.z;
@@ -24,14 +36,14 @@ __global__ void getXIndexMaskedKernel(Real* phi, Real* buffer, Param* p) {
 
     if (i < N && j < N && k < p->numCells) {
         int idx = k*N*N + j*N + i;
-        if (phi[idx] > 0.5)
+        if (phi[idx] > cutoff)
             buffer[idx] = i;
         else
             buffer[idx] = 0.0/0.0;
     }
 }
 
-__global__ void getYIndexMaskedKernel(Real* phi, Real* buffer, Param* p) {
+__global__ void getYIndexMaskedKernel(Real* phi, Real* buffer, Param* p, Real cutoff) {
     int i = blockIdx.x * blockDim.x + threadIdx.x;
     int j = blockIdx.y * blockDim.y + threadIdx.y;
     int k = blockIdx.z * blockDim.z + threadIdx.z;
@@ -39,7 +51,7 @@ __global__ void getYIndexMaskedKernel(Real* phi, Real* buffer, Param* p) {
 
     if (i < N && j < N && k < p->numCells) {
         int idx = k*N*N + j*N + i;
-        if (phi[idx] > 0.5)
+        if (phi[idx] > cutoff)
             buffer[idx] = j;
         else
             buffer[idx] = 0.0/0.0;
@@ -168,7 +180,7 @@ Real derivativeY(Real* phi, int i, int j, int k, Param* p) {
     return (phi[k * N * N + j1 * N + i] - phi[k * N * N + j2 * N + i]) / (2 * p->dx);
 }
 
-__global__ void updatePhiKernel(Real* phi, Real* A, Real* R, Param *p, Real* area, int2 *grid_location, Real* collision_force, Real* buffer) {
+__global__ void updatePhiKernel(Real* phi, Real* A, Real* R, Param *p, Real* area, int2 *grid_location, Real* collision_force, Real* buffer, int t) {
     int i = blockIdx.x * blockDim.x + threadIdx.x;
     int j = blockIdx.y * blockDim.y + threadIdx.y;
     int k = blockIdx.z * blockDim.z + threadIdx.z;
@@ -190,13 +202,14 @@ __global__ void updatePhiKernel(Real* phi, Real* A, Real* R, Param *p, Real* are
         const int2 thread_loc = {grid_location[k].x + i-N/2, grid_location[k].y + j -N/2};
         Real wall_force = 0;
         if (thread_loc.x*thread_loc.x + thread_loc.y*thread_loc.y > p->R_wall*p->R_wall/(p->dx*p->dx))
-            wall_force = phi_*phi_;
-
+        {
+            wall_force = p->m_wall_repulsion*phi_;
+        }
 
 
         dphi += sqrt(phi_x * phi_x + phi_y * phi_y) *
                 (-p->B_s * (area[k]*p->dx*p->dx - p->S0) + p->alpha * A[idx] * phi_
-                 -collision_force[idx] - p->m_repulsion*wall_force);
+                 -collision_force[idx] - wall_force);
 
         buffer[idx] = dphi/p->xi;
     }
@@ -292,21 +305,31 @@ __global__ void updateCollisionForceKernel(Real* phi, int2* grid_locations, Para
     if (i < N && j < N && k < p->numCells) {
         int idx = k*N*N + j*N + i;
         Real phi_ = phi[idx];
-        Real force = 0;
-        for (int l = 0; l < p->numCells; ++l) {
-            if (l != k) {
+        collision_force[idx] = 0;
+        if (phi_ > 0.0025){
+            for (int l = 0; l < k; ++l) {
                 int dx = grid_locations[l].x - grid_locations[k].x;
                 int dy = grid_locations[l].y - grid_locations[k].y;
+                
                 if ((i-dx) >= 0 && (i-dx) < N && (j-dy) >= 0 && (j-dy) < N) {
-                    int idx_ = l*N*N + (j - dy)*N + (i - dx);
-                    Real phi_l = phi[idx_];
-                    force += p->m_repulsion*phi_*phi_ * phi_l*phi_l;
-                    force += p->m_adhesion*(derivativeX(phi, i, j, k, p)*derivativeX(phi, i-dx, j-dy, l, p) +
-                                            derivativeY(phi, i, j, k, p)*derivativeY(phi, i-dx, j-dy, l, p));
+                    int idx_l = l*N*N + (j - dy)*N + (i - dx);
+                    Real phi_l = phi[idx_l];
+                    if (phi_l > 0.0025) {
+                    Real phi_kx = derivativeX(phi, i, j, k, p);
+                    Real phi_ky = derivativeY(phi, i, j, k, p);
+                    Real phi_lx = derivativeX(phi, i - dx, j - dy, l, p);
+                    Real phi_ly = derivativeY(phi, i - dx, j - dy, l, p);
+                    Real repulsion_force = p->m_repulsion * phi_ * phi_l;
+                    Real adhesion_force = p->m_adhesion *
+                        (phi_kx * phi_lx + phi_ky * phi_ly);
+
+                    collision_force[idx] += repulsion_force*phi_l + adhesion_force/sqrt(1 + 32.5*phi_lx*phi_lx + 32.5*phi_ly*phi_ly);
+                    collision_force[idx_l] += repulsion_force*phi_ + adhesion_force/sqrt(1 + 32.5*phi_kx*phi_kx + 32.5*phi_ky*phi_ky);
+                    }
                 }
             }
         }
-        collision_force[idx] = force;
+        // collision_force[idx] = force;
     }
 }
 
@@ -332,4 +355,30 @@ __global__ void addKernel(Real *a, Real *da, Param* p) {
         a[idx] = a[idx] + p->dt*da[idx];
     }
 
+}
+
+__global__ void createCOMXKernel(Real* phi, Real* buffer, Param* p) {
+    int i = blockIdx.x * blockDim.x + threadIdx.x;
+    int j = blockIdx.y * blockDim.y + threadIdx.y;
+    int k = blockIdx.z * blockDim.z + threadIdx.z;
+    int N = p->N;
+
+    if (i < N && j < N && k < p->numCells) {
+        int idx = k*N*N + j*N + i;
+        Real phi_ = phi[idx];
+        buffer[idx] = phi_*i;
+    }
+}
+
+__global__ void createCOMYKernel(Real* phi, Real* buffer, Param* p) {
+    int i = blockIdx.x * blockDim.x + threadIdx.x;
+    int j = blockIdx.y * blockDim.y + threadIdx.y;
+    int k = blockIdx.z * blockDim.z + threadIdx.z;
+    int N = p->N;
+
+    if (i < N && j < N && k < p->numCells) {
+        int idx = k*N*N + j*N + i;
+        Real phi_ = phi[idx];
+        buffer[idx] = phi_*j;
+    }
 }
