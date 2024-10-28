@@ -44,7 +44,7 @@ struct Param {
     Real m_wall_repulsion = 30;
 } typedef Param;
 
-inline void writeParamFile(std::string filename, Param param) {
+inline void writeParamFile(std::string filename, Param param, unsigned long long seed) {
     std::ofstream fout(filename.c_str(), std::ios::out);
     fout << "N " << param.N << std::endl;
     fout << "T " << param.T << std::endl;
@@ -78,6 +78,7 @@ inline void writeParamFile(std::string filename, Param param) {
     fout << "R_wall " << param.R_wall << std::endl;
     fout << "m_adhesion " << param.m_adhesion << std::endl;
     fout << "m_wall_repulsion " << param.m_wall_repulsion << std::endl;
+    fout << "seed "  << seed << std::endl;
     fout.close();
 }
 

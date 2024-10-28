@@ -10,9 +10,9 @@ __device__ __forceinline__ Real derivativeY(Real *phi, int i, int j, int k, Para
 
 __global__ void initializePhiKernel(Real* phi, Param* p);
 __global__ void updatePhiKernel(Real* phi, Real* A, Real* R, Param *p, Real* area, int2* grid_location, Real* collision_force, Real* buffer, int t);
-__global__ void UpdateAKernel(Real* phi, Real* A, Real* R, Param* p, Real* phi_t, curandState* state, Real* buffer);
+__global__ void updateAKernel(Real* phi, Real* A, Real* R, Param* p, Real* phi_t, curandState* state, Real* buffer);
 __global__ void updateRKernel(Real* phi, Real* A, Real* R, Param* p, Real* phi_t, curandState* state, Real* buffer);
-__global__ void setupCurandStates(curandState *state, unsigned long long seed, Param* p);
+__global__ void setupCurandStates(curandState *state, unsigned long long seed, unsigned long long offset, Param* p);
 __global__ void getYIndexMaskedKernel(Real* phi, Real* buffer, Param* p, Real cutoff);
 __global__ void getXIndexMaskedKernel(Real* phi, Real* buffer, Param* p, Real cutoff);
 __global__ void rollGridYKernel(Real* phi, Real* buffer, int2* d_grid, Param* p);
@@ -22,5 +22,8 @@ __global__ void updateCollisionForceKernel(Real* phi, int2* grid_locations, Para
 __global__ void updateBoundingIndex(int2* grid_cublas_index, Param* p);
 __global__ void createCOMXKernel(Real* phi, Real* buffer, Param* p);
 __global__ void createCOMYKernel(Real* phi, Real* buffer, Param* p);
+__global__ void createCOMAYKernel(Real* phi, Real* A, Real* buffer, Param* p);
+__global__ void createCOMAXKernel(Real* phi, Real* A, Real* buffer, Param* p);
+__global__ void multiplyKernel(Real* in1, Real* in2, Real* out, Param* p);
 
 #endif // KERNELS_CUH

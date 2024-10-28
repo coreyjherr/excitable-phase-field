@@ -216,7 +216,7 @@ __global__ void updatePhiKernel(Real* phi, Real* A, Real* R, Param *p, Real* are
 
 }
 
-__global__ void UpdateAKernel(Real* phi, Real* A, Real* R, Param* p, Real* phi_t, curandState* state, Real* buffer) {
+__global__ void updateAKernel(Real* phi, Real* A, Real* R, Param* p, Real* phi_t, curandState* state, Real* buffer) {
     int i = blockIdx.x * blockDim.x + threadIdx.x;
     int j = blockIdx.y * blockDim.y + threadIdx.y;
     int k = blockIdx.z * blockDim.z + threadIdx.z;
@@ -237,7 +237,7 @@ __global__ void UpdateAKernel(Real* phi, Real* A, Real* R, Param* p, Real* phi_t
             dA += p->D_A * laplacian(A, i, j, k, p);
             dA += p->D_A * (phi_x * A_x + phi_y * A_y)/phi_;
 
-            dA += (p->A_t- A_)*(p->k_a*A_*A_/(p->K*p->K + A_*A_) + p->b*phi_) - (p->d1 + p->d2*R[idx])*A_;
+            dA += (p->A_t- A_)*(p->k_a*A_*A_/(p->K*p->K + A_*A_) + p->b) - (p->d1 + p->d2*R[idx])*A_;
             dA -= A_*phi_t[idx]/phi_;
 
             curandState localState = state[idx];
@@ -333,14 +333,14 @@ __global__ void updateCollisionForceKernel(Real* phi, int2* grid_locations, Para
     }
 }
 
-__global__ void setupCurandStates(curandState *state, unsigned long long seed, Param* p) {
+__global__ void setupCurandStates(curandState *state, unsigned long long seed, unsigned long long offset, Param* p) {
     int i = blockIdx.x * blockDim.x + threadIdx.x;
     int j = blockIdx.y * blockDim.y + threadIdx.y;
     int k = blockIdx.z * blockDim.z + threadIdx.z;
 
     if (i < p->N && j < p->N && k < p->numCells) {
         int idx = k*p->N*p->N + j*p->N + i;
-        curand_init(seed, idx, 0, &state[idx]);
+        curand_init(seed, idx + offset, 0, &state[idx]);
     }
 }
 
@@ -380,5 +380,41 @@ __global__ void createCOMYKernel(Real* phi, Real* buffer, Param* p) {
         int idx = k*N*N + j*N + i;
         Real phi_ = phi[idx];
         buffer[idx] = phi_*j;
+    }
+}
+
+__global__ void createCOMAXKernel(Real* phi, Real* A, Real* buffer, Param* p) {
+    int i = blockIdx.x * blockDim.x + threadIdx.x;
+    int j = blockIdx.y * blockDim.y + threadIdx.y;
+    int k = blockIdx.z * blockDim.z + threadIdx.z;
+    int N = p->N;
+
+    if (i < N && j < N && k < p->numCells) {
+        int idx = k*N*N + j*N + i;
+        buffer[idx] = phi[idx]*A[idx]*i;
+    }
+}
+
+__global__ void createCOMAYKernel(Real* phi, Real* A, Real* buffer, Param* p) {
+    int i = blockIdx.x * blockDim.x + threadIdx.x;
+    int j = blockIdx.y * blockDim.y + threadIdx.y;
+    int k = blockIdx.z * blockDim.z + threadIdx.z;
+    int N = p->N;
+
+    if (i < N && j < N && k < p->numCells) {
+        int idx = k*N*N + j*N + i;
+        buffer[idx] = phi[idx]*A[idx]*j;
+    }
+}
+
+__global__ void multiplyKernel(Real* in1, Real* in2, Real* out, Param* p){
+    int i = blockIdx.x * blockDim.x + threadIdx.x;
+    int j = blockIdx.y * blockDim.y + threadIdx.y;
+    int k = blockIdx.z * blockDim.z + threadIdx.z;
+    int N = p->N;
+
+    if (i < N && j < N && k < p->numCells) {
+        int idx = k*N*N + j*N + i;
+        out[idx] = in1[idx]*in2[idx];
     }
 }

@@ -1,5 +1,7 @@
-.venv
+.venv/
+movies/
 __pycache__/
+excitable_system_test/
 build/
 .cache/
 compile_commands.json
@@ -8,3 +10,9 @@ indicators.hpp
 *.dat
 *.mp4
 *.txt
+output
+movies_view
+params
+results
+com
+single_cell_trials
