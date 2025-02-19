@@ -20,6 +20,7 @@
 #define cublasIramin(handle, n, x, incx, result) cublasIsamin(handle, n, x, incx, result)
 #define cublasIramax(handle, n, x, incx, result) cublasIsamax(handle, n, x, incx, result)
 #define cublasRswap(handle, n, x, incx, y, incy) cublasSswap(handle, n, x, incx, y, incy)
+#define cublasRcopy(handle, n, x, incx, y, incy) cublasScopy(handle, n, x, incx, y, incy)
 #endif
 #ifndef USE_FLOAT
 #define cublasRasum(handle, n, x, incx, result) cublasDasum(handle, n, x, incx, result)
@@ -27,8 +28,32 @@
 #define cublasIramin(handle, n, x, incx, result) cublasIdamin(handle, n, x, incx, result)
 #define cublasIramax(handle, n, x, incx, result) cublasIdamax(handle, n, x, incx, result)
 #define cublasRswap(handle, n, x, incx, y, incy) cublasDswap(handle, n, x, incx, y, incy)
+#define cublasRcopy(handle, n, x, incx, y, incy) cublasDcopy(handle, n, x, incx, y, incy)
 #endif
 
+Real initializeParamArray(Param p, Param* p_array) {
+    // Initialize the parameter array with the same parameters but different radius evenly distributed between r0 and r0 + delta_r
+    // Parameters:
+    // p: Param struct with the parameters
+    // p_array: Array of Param structs to be initialized
+    // Return: the total radius of the population for the grid location initialization
+    srand(0);
+    Real total_area = 0;
+    for (int i = 0; i < p.numCells; ++i) {
+        p_array[i] = p;
+        p_array[i].r0 = p.r0 + (p.delta_r*rand())/(RAND_MAX + 1.0);
+        p_array[i].S0 = M_PI*p_array[i].r0*p_array[i].r0;
+        total_area += p_array[i].S0;
+    }
+    for (int i = 0; i < p.numCells; ++i) {
+        if (p.R_wall == 0)
+            p_array[i].R_wall = sqrt(total_area/(M_PI*p.packing_fraction));
+        p_array[i].Nchem = 2*p_array[i].R_wall/p_array[i].dx + p.N;
+    }
+
+    return sqrt(total_area/(M_PI*p.packing_fraction));
+
+}
 
 Model::Model(Param param, int deviceID, std::string basePath, unsigned long long seed) {
     p = param;
@@ -42,18 +67,49 @@ Model::Model(Param param, int deviceID, std::string basePath, unsigned long long
     block = dim3(blockSizeX, blockSizeY, blockSizeZ);
     grid = dim3((p.N + blockSizeX - 1) / blockSizeX, (p.N + blockSizeY - 1) / blockSizeY, (numCells + blockSizeZ - 1) / blockSizeZ);
 
-    cudaErrCheck(cudaMalloc((void**)&d_Param, sizeof(Param)));
-    cudaErrCheck(cudaMemcpy(d_Param, &p, sizeof(Param), cudaMemcpyHostToDevice));
+
+    Param* paramArray = new Param[numCells];
+    Real populationRadius = initializeParamArray(p, paramArray);
+#ifdef USE_CHEMO
+    p.Nchem = paramArray[0].Nchem;
+#else
+    p.Nchem = 0;
+#endif
+    Cblocks = dim3(p.Nchem/32 + 1, p.Nchem/32 + 1);
+    Cthreads_per_block = dim3(32, 32 );
+    // std::cout << "Nchem: " << p.Nchem << "\n";
+    paramArray[0].chem_force = paramArray[0].dt*paramArray[0].chem_force;
+    cudaErrCheck(cudaMalloc((void**)&d_Param, sizeof(Param)*numCells));
+    cudaErrCheck(cudaMemcpy(d_Param, paramArray, sizeof(Param)*numCells, cudaMemcpyHostToDevice));
+    // delete[] paramArray;
 
     // Initialize device and host pointers
     initializeDeviceMemory();
     initializeHostMemory();
 
+    Real* ones = new Real[p.N*p.N];
+    for (int i = 0; i < p.N*p.N; ++i) {
+        ones[i] = 1;
+    }
+    cudaErrCheck(cudaMalloc((void**)&d_ones, p.N*p.N*sizeof(Real)));
+    cudaErrCheck(cudaMemcpy(d_ones, ones, p.N*p.N*sizeof(Real), cudaMemcpyHostToDevice));
+
+    Real *beta, *alpha;
+    beta = new Real;
+    alpha = new Real;
+    *beta = 0;
+    *alpha = 1;
+    cudaErrCheck(cudaMalloc((void**)&d_beta, sizeof(Real)));
+    cudaErrCheck(cudaMalloc((void**)&d_alpha, sizeof(Real)));
+    cudaErrCheck(cudaMemcpy(d_beta, beta, sizeof(Real), cudaMemcpyHostToDevice));
+    cudaErrCheck(cudaMemcpy(d_alpha, alpha, sizeof(Real), cudaMemcpyHostToDevice));
+
     // Initialize phi
     initializePhiKernel<<<grid, block>>>(d_phi, d_Param);
+    cudaErrCheck(cudaGetLastError());
 
     // Initialize the grid location
-    initializeCellGrid();
+    initializeCellGrid(populationRadius);
     cudaErrCheck(cudaMemcpy(d_grid_location, grid_location, numCells*sizeof(int2), cudaMemcpyHostToDevice));
 
     // Initialize cublas
@@ -64,7 +120,9 @@ Model::Model(Param param, int deviceID, std::string basePath, unsigned long long
     cudaErrCheck(cudaMalloc((void**)&d_states, numCells*p.N*p.N*sizeof(curandState)));
     cudaErrCheck(cudaMalloc((void**)&d_Rstates, numCells*p.N*p.N*sizeof(curandState)));
     setupCurandStates<<<grid, block>>>(d_states, rngSeed, 0, d_Param);
+    cudaErrCheck(cudaGetLastError());
     setupCurandStates<<<grid, block>>>(d_Rstates, rngSeed, numCells*p.N*p.N, d_Param);
+    cudaErrCheck(cudaGetLastError());
     curandErrCheck(cudaGetLastError());
 
     initializeOutput(basePath);
@@ -87,7 +145,6 @@ Model::~Model() {
     cudaErrCheck(cudaFree(d_com));
     cudaErrCheck(cudaFree(d_comA));
 
-
     delete[] phi;
     delete[] A;
     delete[] R;
@@ -104,9 +161,9 @@ Model::~Model() {
     std::lock_guard<std::mutex> guard(fileMutex);
     phi_output.close();
     A_output.close();
-    grid_location_output.close();
-    com_output.close();
-    comA_output.close();
+#ifdef USE_CHEMO
+    C_output.close();
+#endif
 }
 
 void Model::initializeHostMemory() {
@@ -118,6 +175,7 @@ void Model::initializeHostMemory() {
     grid_location = new int2[numCells];
     com = new Real2[numCells];
     comA = new Real2[numCells];
+    C = new Real[p.Nchem*p.Nchem];
 }
 
 void Model::initializeDeviceMemory() {
@@ -135,7 +193,8 @@ void Model::initializeDeviceMemory() {
     cudaErrCheck(cudaMalloc((void**)&d_grid_location, numCells*sizeof(int2)));
     cudaErrCheck(cudaMalloc((void**)&d_com, numCells*sizeof(Real2)));
     cudaErrCheck(cudaMalloc((void**)&d_comA, numCells*sizeof(Real2)));
-
+    cudaErrCheck(cudaMalloc((void**)&d_C, p.Nchem*p.Nchem*sizeof(Real)));
+    cudaErrCheck(cudaMalloc((void**)&d_Cbuffer, p.Nchem*p.Nchem*sizeof(Real)));
 
     // Initialize memory on device
     cudaErrCheck(cudaMemset(d_phi, 0, numCells*p.N*p.N*sizeof(Real)));
@@ -148,32 +207,24 @@ void Model::initializeDeviceMemory() {
     cudaErrCheck(cudaMemset(d_phi_t, 0, numCells*p.N*p.N*sizeof(Real)));
     cudaErrCheck(cudaMemset(d_com, 0, numCells*sizeof(Real2)));
     cudaErrCheck(cudaMemset(d_comA, 0, numCells*sizeof(Real2)));
+    cudaErrCheck(cudaMemset(d_C, 0, p.Nchem*p.Nchem*sizeof(Real)));
+    cudaErrCheck(cudaMemset(d_Cbuffer, 0, p.Nchem*p.Nchem*sizeof(Real)));
 
 }
 
-void Model::initializeCellGrid() {
-    // int sqrt_numCells = sqrt(1.0*numCells)+1;
-    // for (int i = 0; i < sqrt_numCells; ++i) {
-    //     for (int j = 0; j < sqrt_numCells; ++j) {
-    //         if (i*sqrt_numCells + j >= numCells) {
-    //             break;
-    //         }
-    //         grid_location[i*sqrt_numCells + j].x = p.initial_offset_x*i;
-    //         grid_location[i*sqrt_numCells + j].y = p.initial_offset_y*j;
-    //     }
-    // }
+void Model::initializeCellGrid(Real populationRadius) {
 
     Real phi = (1 + sqrt(5))/2;
+    int b = round(2*sqrt(numCells));
     for (int i = 0; i < numCells; ++i) {
         int k = i+1;
-        int b = round(2*sqrt(numCells));
         Real r;
         if (k > numCells-b)
             r  = 1;
         else
             r = sqrt(1.0*k-0.5)/sqrt(1.0*numCells - (1.0*b+1)/2);
         Real theta = 2*M_PI*k/(phi*phi);
-        Real rCircle = (sqrt(numCells)-1)*p.r0*r;
+        Real rCircle = populationRadius*r;
         grid_location[i].x = rCircle/p.dx*cos(theta);
         grid_location[i].y = rCircle/p.dx*sin(theta);
     }
@@ -189,22 +240,21 @@ void Model::initializeOutput(std::string basePath) {
     string time_str = oss.str();
     time_str += "_" + std::to_string(deviceID_);
 
-    string phi_filestring = basePath + "phi_" + time_str + ".dat";
-    string A_filestring = basePath + "A_" + time_str + ".dat";
-    string grid_location_filestring = basePath + "grid_location_" + time_str + ".dat";
-    string com_filestring = basePath + "com_" + time_str + ".dat";
-    string comA_filestring = basePath + "comA_" + time_str + ".dat";
+    A_output.open(basePath + "A_" + time_str + ".dat", std::ios::binary);
+    phi_output.open(basePath + "phi_" + time_str + ".dat", std::ios::binary);
+    label_output.open(basePath + "label_" + time_str + ".dat", std::ios::binary);
+#ifdef USE_CHEMO
+    C_output.open(basePath + "C_" + time_str + ".dat", std::ios::binary);
+#endif
 
     writeParamFile(basePath +  "param_" + time_str + ".txt", p, rngSeed);
-    phi_output = std::ofstream(phi_filestring, std::ios::out | std::ios::binary);
-    A_output = std::ofstream(A_filestring, std::ios::out | std::ios::binary);
-    grid_location_output = std::ofstream(grid_location_filestring, std::ios::out | std::ios::binary);
-    com_output = std::ofstream(com_filestring, std::ios::out | std::ios::binary);
-    comA_output = std::ofstream(comA_filestring, std::ios::out | std::ios::binary);
-
-    grid_location_output.write(reinterpret_cast<char*>(&numCells), sizeof(int));
-    int numTimeOutputs = p.T/p.blind;
-    grid_location_output.write(reinterpret_cast<char*>(&numTimeOutputs), sizeof(int));
+    dynamics_output.open(basePath + "dynamics_" + time_str + ".dat", std::ios::binary);
+    // dynamics_output << "t,cell,grid_offset_x,grid_offset_y,phi_area,A_area,com_x,com_y,comA_x,comA_y" << "\n";
+    // write the number of columns and byte size of columns in the dyanmics output file
+    float numColumns = 10;
+    float realWidth = sizeof(Real);
+    dynamics_output.write(reinterpret_cast<char*>(&numColumns), sizeof(float));
+    dynamics_output.write(reinterpret_cast<char*>(&realWidth), sizeof(float));
 }
 
 void Model::simulate(bool progressBar, bool useCondensedOutput) {
@@ -212,9 +262,10 @@ void Model::simulate(bool progressBar, bool useCondensedOutput) {
     BlockProgressBar bar{
         option::BarWidth{80}, option::ForegroundColor{Color::white},
         option::FontStyles{std::vector<FontStyle>{FontStyle::bold}},
-        option::MaxProgress{p.T+startupSteps}, option::ShowElapsedTime{true},option::ShowRemainingTime{true}};
+        option::MaxProgress{p.T}, option::ShowElapsedTime{true},option::ShowRemainingTime{true}};
 
     int earlyExit = 0;
+    cudaErrCheck(cudaDeviceSynchronize());
     for (int t=0; t < startupSteps; t++)
     {
         // Early stages to stabilize the system
@@ -225,9 +276,6 @@ void Model::simulate(bool progressBar, bool useCondensedOutput) {
         {
             updateGridLocation();
         }
-        if (progressBar) {
-            bar.tick();
-        }
     }
 
     for (int t = 0; t < p.T; t++) {
@@ -236,15 +284,20 @@ void Model::simulate(bool progressBar, bool useCondensedOutput) {
         if (t % p.blind == 0) {
             updateGridLocation();
             updateCOM();
+            writeDynamics(t);
+        }
+
+        // Hardcode the full output to every 400 steps
+        if (t % 400 == 0) {
+            // writeInBackground(t, useCondensedOutput);
             earlyExit = write(useCondensedOutput);
-            if (earlyExit)
-            {
-                return;
-            }
         }
 
         updateCollisionForce();
         updatePhi(t);
+#ifdef USE_CHEMO
+        updateC();
+#endif
         updateA();
         updateR();
 
@@ -254,37 +307,55 @@ void Model::simulate(bool progressBar, bool useCondensedOutput) {
     }
 }
 
-
 void Model::updateArea() {
-    for (int i = 0; i < numCells; ++i) {
-        cublasErrCheck(cublasRasum(handle, p.N*p.N, d_phi + i*p.N*p.N, 1, d_area + i));
-    }
+    cublasErrCheck(cublasSgemv(handle, CUBLAS_OP_T, p.N*p.N, numCells, d_alpha, d_phi, p.N*p.N, d_ones, 1, d_beta, d_area, 1));
 }
 
 void Model::updateA_Area() {
 }
 
 void Model::updatePhi(int t) {
+#ifdef USE_CHEMO
+    updatePhiKernelChemo<<<grid, block>>>(d_phi, d_A, d_R, d_C, d_Param, d_area, d_grid_location, d_collision_force, d_phi_t, t);
+#else
     updatePhiKernel<<<grid, block>>>(d_phi, d_A, d_R, d_Param, d_area, d_grid_location, d_collision_force, d_phi_t, t);
-    cublasErrCheck(cublasRaxpy(handle, numCells*p.N*p.N, &(d_Param->dt), d_phi_t, 1, d_phi, 1));
+#endif
+    // updatePhiKernel<<<grid, block>>>(d_phi, d_A, d_R, d_Param, d_area, d_grid_location, d_collision_force, d_phi_t, t);
+    cudaErrCheck(cudaGetLastError());
+    cublasErrCheck(cublasRaxpy(handle, numCells*p.N*p.N, &(d_Param->chem_force), d_phi_t, 1, d_phi, 1));
+}
+
+void Model::updateC() {
+    updateCKernel<<<Cblocks, Cthreads_per_block>>>(d_C, d_Cbuffer, d_Param);
+    cudaErrCheck(cudaGetLastError());
+    cublasErrCheck(cublasRcopy(handle, p.Nchem*p.Nchem, d_Cbuffer, 1, d_C, 1));
 }
 
 void Model::updateA() {
-    updateAKernel<<<grid, block>>>(d_phi, d_A, d_R, d_Param, d_phi_t, d_states, d_buffer);
+    updateAKernel<<<grid, block>>>(d_phi, d_A, d_R, d_Param, d_phi_t, d_grid_location, d_states, d_buffer);
+    cudaErrCheck(cudaGetLastError());
     cublasErrCheck(cublasRaxpy(handle, numCells*p.N*p.N, &(d_Param->dt), d_buffer, 1, d_A, 1));
 }
 
 void Model::updateR() {
-    updateRKernel<<<grid, block>>>(d_phi, d_A, d_R, d_Param, d_phi_t, d_Rstates, d_buffer);
+#ifdef USE_CHEMO
+    updateRKernelChemo<<<grid, block>>>(d_phi, d_A, d_R, d_C, d_Param, d_phi_t, d_grid_location, d_Rstates, d_buffer);
+#else
+    updateRKernel<<<grid, block>>>(d_phi, d_A, d_R, d_Param, d_phi_t, d_grid_location, d_Rstates, d_buffer);
+#endif
+    cudaErrCheck(cudaGetLastError());
     cublasErrCheck(cublasRaxpy(handle, numCells*p.N*p.N, &(d_Param->dt), d_buffer, 1, d_R, 1));
 }
 
+
 void Model::updateCollisionForce() {
     updateCollisionForceKernel<<<grid, block>>>(d_phi, d_grid_location, d_Param, d_collision_force);
+    cudaErrCheck(cudaGetLastError());
 }
 
 void Model::updateGridLocation() {
     getXIndexMaskedKernel<<<grid, block>>>(d_phi, d_buffer, d_Param, 0.5);
+    cudaErrCheck(cudaGetLastError());
     for (int i = 0; i < numCells; ++i) {
         cublasErrCheck(cublasIramax(handle, p.N*p.N, d_buffer + i*p.N*p.N, 1, &(d_grid_max + i)->x));
         cublasErrCheck(cublasIramin(handle, p.N*p.N, d_buffer + i*p.N*p.N, 1, &(d_grid_min + i)->x));
@@ -293,6 +364,7 @@ void Model::updateGridLocation() {
     rollAllFieldsX();
 
     getYIndexMaskedKernel<<<grid, block>>>(d_phi, d_buffer, d_Param, 0.5);
+    cudaErrCheck(cudaGetLastError());
     for (int i = 0; i < numCells; ++i) {
         cublasErrCheck(cublasIramax(handle, p.N*p.N, d_buffer + i*p.N*p.N, 1, &((d_grid_max + i)->y)));
         cublasErrCheck(cublasIramin(handle, p.N*p.N, d_buffer + i*p.N*p.N, 1, &((d_grid_min + i)->y)));
@@ -302,7 +374,9 @@ void Model::updateGridLocation() {
     cudaErrCheck(cudaDeviceSynchronize());
 
     updateGridLocationKernel<<<1, numCells>>>(d_grid_min, d_grid_location, d_Param);
+    cudaErrCheck(cudaGetLastError());
     updateGridLocationKernel<<<1, numCells>>>(d_grid_max, d_grid_location, d_Param);
+    cudaErrCheck(cudaGetLastError());
 
 }
 
@@ -369,7 +443,6 @@ void Model::updateCOM() {
 
 }
 
-
 void Model::rollAllFieldsX() {
     rollGridXKernel<<<grid, block>>>(d_phi, d_buffer, d_grid_max, d_Param);
     cublasErrCheck(cublasRswap(handle, numCells*p.N*p.N, d_buffer, 1, d_phi, 1));
@@ -410,6 +483,7 @@ void Model::rollAllFieldsY() {
     cublasErrCheck(cublasRswap(handle, numCells*p.N*p.N, d_buffer, 1, d_R, 1));
 }
 
+
 WriteError Model::makeCondensedOutput(Real* field1, Real* field2, std::ofstream& outputField)
 {
     int2 min_grid_location;
@@ -419,6 +493,9 @@ WriteError Model::makeCondensedOutput(Real* field1, Real* field2, std::ofstream&
     max_grid_location.x = grid_location[0].x;
     max_grid_location.y = grid_location[0].y;
 
+    // Hardcoded cutoff radius for the condensed field size
+    int R_cutoff = 512; 
+
     for (int i=0; i<numCells; i++)
     {
         min_grid_location.x = grid_location[i].x < min_grid_location.x ? grid_location[i].x : min_grid_location.x;
@@ -426,16 +503,18 @@ WriteError Model::makeCondensedOutput(Real* field1, Real* field2, std::ofstream&
         max_grid_location.x = grid_location[i].x > max_grid_location.x ? grid_location[i].x : max_grid_location.x;
         max_grid_location.y = grid_location[i].y > max_grid_location.y ? grid_location[i].y : max_grid_location.y;
     }
+
     int condensed_size_x = max_grid_location.x - min_grid_location.x + p.N;
     int condensed_size_y = max_grid_location.y - min_grid_location.y + p.N;
+
     if (condensed_size_x < 0 || condensed_size_y < 0)
     {
-        std::cerr << "Error: condensed_size_x or condensed_size_y is negative" << std::endl;
+        std::cerr << "Error: condensed_size_x or condensed_size_y is negative" << "\n";
         return 1;
     }
     if (condensed_size_x > 10000 || condensed_size_y > 10000)
     {
-        std::cerr << "Error: condensed_size_x or condensed_size_y is too large" << std::endl;
+        std::cerr << "Error: condensed_size_x or condensed_size_y is too large" << "\n";
         return 1;
     }
 
@@ -471,6 +550,7 @@ WriteError Model::makeCondensedOutput(Real* field1, Real* field2, std::ofstream&
                 int xcoord = grid_location[k].x + i - min_grid_location.x;
                 int ycoord = grid_location[k].y + j - min_grid_location.y;
                 condensed_field[ycoord*condensed_size_x + xcoord] += field1[k*p.N*p.N + j*p.N + i] * field2[k*p.N*p.N + j*p.N + i];
+
             }
         }
     }
@@ -483,17 +563,43 @@ WriteError Model::makeCondensedOutput(Real* field1, Real* field2, std::ofstream&
     return 0;
 }
 
+WriteError Model::writeDynamics(int step) {
+
+    cudaErrCheck(cudaMemcpy(grid_location, d_grid_location, numCells*sizeof(int2), cudaMemcpyDeviceToHost));
+    Real real_i, real_step, real_x, real_y;
+    for (int i=0; i < numCells; ++i)
+    {
+        real_i = (Real) i;
+        real_step = (Real) step;
+        real_x = (Real) grid_location[i].x;
+        real_y = (Real) grid_location[i].y;
+        dynamics_output.write(reinterpret_cast<char*>(&real_i), sizeof(Real));
+        dynamics_output.write(reinterpret_cast<char*>(&real_step), sizeof(Real));
+        dynamics_output.write(reinterpret_cast<char*>(&real_x), sizeof(Real));
+        dynamics_output.write(reinterpret_cast<char*>(&real_y), sizeof(Real));
+        dynamics_output.write(reinterpret_cast<char*>(&area[i]), sizeof(Real));
+        dynamics_output.write(reinterpret_cast<char*>(&Aarea[i]), sizeof(Real));
+        dynamics_output.write(reinterpret_cast<char*>(&com[i].x), sizeof(Real));
+        dynamics_output.write(reinterpret_cast<char*>(&com[i].y), sizeof(Real));
+        dynamics_output.write(reinterpret_cast<char*>(&comA[i].x), sizeof(Real));
+        dynamics_output.write(reinterpret_cast<char*>(&comA[i].y), sizeof(Real));
+    }
+    return 0;
+}
+
 WriteError Model::write(bool useCondensedOutput) {
     // Write phi and A to file
     std::lock_guard<std::mutex> guard(fileMutex); // Lock the mutex
     cudaErrCheck(cudaMemcpy(phi, d_phi, numCells*p.N*p.N*sizeof(Real), cudaMemcpyDeviceToHost));
     cudaErrCheck(cudaMemcpy(A, d_A, numCells*p.N*p.N*sizeof(Real), cudaMemcpyDeviceToHost));
-    cudaErrCheck(cudaMemcpy(grid_location, d_grid_location, numCells*sizeof(int2), cudaMemcpyDeviceToHost));
 
     if (useCondensedOutput) {
         WriteError earlyExit = makeCondensedOutput(phi, nullptr, phi_output);
         WriteError earlyExitA = makeCondensedOutput(A, phi, A_output);
-        if (earlyExit || earlyExitA)
+        makeLabelImage<<<grid, block>>>(d_phi, d_buffer, d_grid_location, d_Param);
+        cudaErrCheck(cudaMemcpy(phi, d_buffer, numCells*p.N*p.N*sizeof(Real), cudaMemcpyDeviceToHost));
+        WriteError earlyExitLabel = makeCondensedOutput(phi, nullptr, label_output);
+        if (earlyExit || earlyExitA || earlyExitLabel)
         {
             return 1;
         }
@@ -503,21 +609,17 @@ WriteError Model::write(bool useCondensedOutput) {
         A_output.write(reinterpret_cast<char*>(A), numCells*p.N*p.N*sizeof(Real));
     }
 
-    grid_location_output.write(reinterpret_cast<char*>(grid_location), numCells*sizeof(int2));
+    // Write the concentration field to file
+#ifdef USE_CHEMO
+    cudaErrCheck(cudaMemcpy(C, d_C, p.Nchem*p.Nchem*sizeof(Real), cudaMemcpyDeviceToHost));
+    C_output.write(reinterpret_cast<char*>(C), p.Nchem*p.Nchem*sizeof(Real));
+#endif
 
-    for (int i = 0; i < numCells; ++i) {
-        com[i].x += grid_location[i].x;
-        com[i].y += grid_location[i].y;
-        comA[i].x += grid_location[i].x;
-        comA[i].y += grid_location[i].y;
-    }
-    com_output.write(reinterpret_cast<char*>(com), numCells*sizeof(Real2));
-    comA_output.write(reinterpret_cast<char*>(comA), numCells*sizeof(Real2));
     return 0;
 }
 
 // Function to run the file writing operation in a background thread
-void Model::writeInBackground(bool useCondensedOutput) {
+void Model::writeInBackground( bool useCondensedOutput) {
     std::thread backgroundThread(&Model::write, this, useCondensedOutput);
     backgroundThread.detach(); // Detach the thread to run in the background
     

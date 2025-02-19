@@ -42,6 +42,13 @@ struct Param {
     Real R_wall = 20;
     Real m_adhesion = 1;
     Real m_wall_repulsion = 30;
+    Real packing_fraction = 0.85;
+    Real chem_strength = 0.001;
+    Real chem_decay = 0.1;
+    Real Dchem = 0.5;
+    int Nchem = 1024;
+    Real chem_force = 0.001;
+    Real delta_r = 0;
 } typedef Param;
 
 inline void writeParamFile(std::string filename, Param param, unsigned long long seed) {
@@ -79,6 +86,13 @@ inline void writeParamFile(std::string filename, Param param, unsigned long long
     fout << "m_adhesion " << param.m_adhesion << std::endl;
     fout << "m_wall_repulsion " << param.m_wall_repulsion << std::endl;
     fout << "seed "  << seed << std::endl;
+    fout << "packing_fraction " << param.packing_fraction << std::endl;
+    fout << "chem_strength " << param.chem_strength << std::endl;
+    fout << "chem_decay " << param.chem_decay << std::endl;
+    fout << "Dchem " << param.Dchem << std::endl;
+    fout << "Nchem " << param.Nchem << std::endl;
+    fout << "chem_force " << param.chem_force << std::endl;
+    fout << "delta_r " << param.delta_r << std::endl;
     fout.close();
 }
 

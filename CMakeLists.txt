@@ -22,3 +22,9 @@ add_executable(run_phase_field ${SOURCES})
 target_link_libraries(run_phase_field PRIVATE -lcublas -lcurand)
 set_property(TARGET run_phase_field PROPERTY CUDA_SEPARABLE_COMPILATION ON)
 target_compile_options(run_phase_field PUBLIC -O3)
+
+option(CHEMO "Use chemo" OFF)
+
+if(CHEMO)
+    target_compile_definitions(run_phase_field PRIVATE USE_CHEMO)
+endif()
