@@ -1,16 +1,39 @@
+/*
+MIT License
+
+Copyright (c) 2025 Corey Herr
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE
+*/
 #ifndef PARAMS_CUH
 #define PARAMS_CUH
 
 typedef float Real;
-typedef float2 Real2;
 #define FLOAT
 
 #include <fstream>
+#include <vector>
+#include <iostream>
 
 struct Param { 
     int N = 256;
-    int T = 15000;
-    int blind = 400;
+    int T = 1000/0.001;
+    int blind = 25;
     Real dt = 0.001;
     Real dx = 0.2;
 
@@ -34,21 +57,19 @@ struct Param {
     Real A0 = 0.5;
     Real S0 = 114;
     Real r0 = 6;
-    Real m_repulsion = 10;
+    Real m_repulsion = 30;
     int numCells = 1;
 
-    int  initial_offset_x = 40;
-    int initial_offset_y = 0;
-    Real R_wall = 20;
-    Real m_adhesion = 1;
+    Real R_wall = 0.;
+    Real m_adhesion = 0.;
     Real m_wall_repulsion = 30;
     Real packing_fraction = 0.85;
     Real chem_strength = 0.001;
     Real chem_decay = 0.1;
     Real Dchem = 0.5;
     int Nchem = 1024;
-    Real chem_force = 0.001;
-    Real delta_r = 0;
+    Real chem_force = 1;
+    Real delta_r = 0.;
 } typedef Param;
 
 inline void writeParamFile(std::string filename, Param param, unsigned long long seed) {
@@ -80,8 +101,6 @@ inline void writeParamFile(std::string filename, Param param, unsigned long long
     fout << "r0 " << param.r0 << std::endl;
     fout << "m_repulsion " << param.m_repulsion << std::endl;
     fout << "numCells " << param.numCells << std::endl;
-    fout << "initial_offset_x " << param.initial_offset_x << std::endl;
-    fout << "initial_offset_y " << param.initial_offset_y << std::endl;
     fout << "R_wall " << param.R_wall << std::endl;
     fout << "m_adhesion " << param.m_adhesion << std::endl;
     fout << "m_wall_repulsion " << param.m_wall_repulsion << std::endl;
@@ -96,4 +115,45 @@ inline void writeParamFile(std::string filename, Param param, unsigned long long
     fout.close();
 }
 
+inline std::vector<Real> range(Real start, Real stop, Real step) {
+    std::vector<Real> result;
+    for (Real i = start; i < stop; i += step) {
+        result.push_back(i);
+    }
+    return result;
+}
+
+inline std::vector<std::vector<Real>> getAllCombinations(std::vector<std::vector<Real>> params) {
+    // get all the combinations from all lists of parameters
+    std::vector<std::vector<Real>> result;
+    if (params.size() == 0)
+        return result;
+    if (params.size() == 1)
+    {
+        for (auto p : params[0])
+        {
+            result.push_back({p});
+        }
+        return result;
+    }
+    std::vector<std::vector<Real>> rest = getAllCombinations(std::vector<std::vector<Real>>(params.begin()+1, params.end()));
+    for (auto p : params[0])
+    {
+        for (auto r : rest)
+        {
+            std::vector<Real> temp = {p};
+            temp.insert(temp.end(), r.begin(), r.end());
+            result.push_back(temp);
+        }
+    }
+    return result;
+}
+
+// Function to load parameters from TOML file
+std::vector<std::vector<Real>> loadParamsFromTOML(const std::string& filepath, const Param& defaults = Param());
+Param mapCombinationToParam(const std::vector<Real>& combination);
+bool writeParamToTOML(const Param& param, const std::string& filepath, unsigned long long seed);
+void printParam(const Param& param);
+
+// Function to write a Param struct to a TOML file
 #endif // PARAMS_CUH

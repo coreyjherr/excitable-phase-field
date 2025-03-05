@@ -1,7 +1,29 @@
+/*
+MIT License
+
+Copyright (c) 2025 Corey Herr
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE
+*/
 #include "include/model.cuh"
 #include <iostream>
 #include "include/indicators.hpp"
-#include "include/params.cuh"
+#include "include/params.hpp"
 #include <cstdlib>
 #include <vector>
 using std::vector;
@@ -10,54 +32,30 @@ using std::thread;
 
 int main(int argc, char const *argv[]) {
 
-    if (argc > 2)
+    if (argc > 3 || argc < 2)
     {
-        std::cout << "Usage: ./main [storage_location]" << std::endl;
+        std::cout << "Usage: ./run_phase_field config.toml [storage_location]" << std::endl;
         return 1;
     }
+    std::string configFilePath = argv[1];
     std::string basePath = "./results/";
-    if (argc == 2)
+    if (argc == 3)
     {
-        basePath = argv[1];
+        basePath = argv[2];
+        if (basePath.back() != '/')
+            basePath += '/';
     }
-    if (basePath.back() != '/')
-        basePath += '/';
-
     std::cout << basePath << std::endl;
 
-    // vector<Real> alpha = {5, 5.15, 5.3, 5.45};
-    // vector<Real> adhesion = {0, 3, 6, 9, 12, 15};
-    // vector<Real> adhesion = {15, 20, 25, 30, 35};
-    vector<Real> xi = {5};
-    vector<Real> alpha = range(5.0, 7.51, 0.1);
-    vector<Real> adhesion = range(15, 30.1, 0.5);
-    vector<Real> c2 = {31.5};//, 33};
-    vector<Real> chem_strength = {.25};
-    vector<Real> chem_force = {1};
-    vector<Real> m_wall_repulsion = {30};
-    // vector<Real> xi = range(4.5, 6.51, 0.1);
-    // vector<Real> xi = {4.5, 5.5};
-    // vector<Real> alpha = range(4.5, 13.01, 0.1);
-    // vector<Real> alpha = range(5.5, 7.6, 0.5);
-    // vector<Real> alpha = {5.5, 6.5, 7, 7.5};
-    // vector<Real> alpha = range(6, 7.5, 0.1);
-    // vector<Real> gamma = {1.5, 2};
-    // vector<Real> seed = {3, 4, 5, 6, 7};
-    // vector<Real> c2 = {15, 30};
-    // vector<Real> packing_fraction = {0.9, .925, 0.95, .975, 1};
-    // vector<Real> chem_force = {0.05, 0.01};
-    // vector<Real> chem_strength = {0.5};
-    // vector<Real> numCells = {1024, 512, 256, 128 };
-    // vector<Real> adhesion = {0, 1, 3, 5, 7, 10};
-    // vector<Real> B_s = {0.1, 1, 10};
-    vector<Real> packing_fraction = {1};
-    vector<Real> gamma = {2};
-    // vector<vector<Real>> params = { packing_fraction,c2, adhesion, xi , gamma, alpha, };
-    vector<vector<Real>> params = {alpha, adhesion};
-    // vector<vector<Real>> params = {c2, sigma, alpha, adhesion};
+    // load parameters from config file
+
+    Param defaultParams;
+    vector<vector<Real>> params = loadParamsFromTOML(configFilePath, defaultParams);
     vector<vector<Real>> allCombinations = getAllCombinations(params);
+
     std::cout << "Number of combinations: " << allCombinations.size() << std::endl;
-    std::cout << "Example combination: " << allCombinations[0][0] << " " << allCombinations[0][1] << " " << allCombinations[0][2] << std::endl;
+    Param param0 = mapCombinationToParam(allCombinations[0]);
+    printParam(param0);
 
     int numSimulations = allCombinations.size();
     int numThreads = 4;
@@ -65,46 +63,43 @@ int main(int argc, char const *argv[]) {
     std::cout << "Running " << numSimulations << " simulations" << std::endl;
     bool useCondensed = true;
 
-    // create a vector of 4 threads, each thread will run a simulation
     for (int block_index = 0; block_index < numBlocks; block_index++)
     {
+        // create a vector of 4 threads, each thread will run a simulation
         vector<thread> threads;
-        // skip the first two blocks to avoid running the same simulation
+
+        std::ostringstream oss;
+        auto t = std::time(nullptr);
+        auto tm = *std::localtime(&t);
+        oss << std::put_time(&tm, "%Y%m%d_%H%M%S");
+        std::string simulationID = oss.str();
+
+        if (block_index == 0)
+        {
+            // copy the configuration file to the base path with the simulation ID in the string
+            // this is only done once
+            // should be using fsystem but this is easier
+            std::string command = "cp " + configFilePath + " " + basePath + "config_" + simulationID + ".toml";
+            int result = system(command.c_str());
+        }
+
         for (int thread_index = 0; thread_index < numThreads; thread_index++)
         {
             int idx = block_index*numThreads + thread_index;
             if (idx >= numSimulations)
                 break;
 
-            Param param;
-            param.r0 = 5.25;
-            param.delta_r = 1.5;
-            // param.r0 = 7;
-            // param.delta_r = 0;
-            param.blind = 25;
-            param.T = 1000/0.001;
-            param.m_repulsion = 30;
-            // param.numCells = 512;
-            param.numCells = 64;
-            param.m_wall_repulsion = 30;
-            // param.R_wall = sqrt(param.numCells/param.packing_fraction)*param.r0*2;
-
+            Param param = mapCombinationToParam(allCombinations[idx]);
             unsigned long long seed = 0;
-            param.sigma = 0.1;
-            param.R_wall = 0;
 
-            param.packing_fraction = .93;
-            param.alpha = allCombinations[idx][0];
-            param.m_adhesion = allCombinations[idx][1];
-            // param.B_s = 0.01;
-
-            // param.chem_force = 1.5;
-            param.chem_force = 1;
-
-            threads.push_back(thread([thread_index, param, basePath, seed, useCondensed](){
-                Model model(param, thread_index, basePath, seed);
+            threads.push_back(thread([thread_index, param, basePath, seed, useCondensed, simulationID](){
+                Model model(param, thread_index, basePath, seed, simulationID);
                 bool progressBar = thread_index==0;
-                model.simulate(progressBar, useCondensed);
+                try {
+                    model.simulate(progressBar, useCondensed);
+                } catch (const std::runtime_error& e) {
+                    std::cerr << "Caught exception: " << e.what() << std::endl;
+                }
             }));
         }
         // join all threads
@@ -117,7 +112,7 @@ int main(int argc, char const *argv[]) {
 #ifdef USE_CHEMO
         std::string command = "scripts/create_video.py " + basePath + " -c -d";
 #else
-        std::string command = "scripts/create_video.py " + basePath + " -d";
+        std::string command = "scripts/create_video.py " + basePath + " -v -d --glob " + simulationID;
 #endif
 
         // if (useCondensed)

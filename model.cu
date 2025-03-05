@@ -1,16 +1,42 @@
+/*
+MIT License
+
+Copyright (c) 2025 Corey Herr
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE
+*/
 #include "include/indicators.hpp"
 #include "include/model.cuh"
 #include "include/error_check.cuh"
 #include <cuda_runtime.h>
 #include <curand_kernel.h>
 #include "include/kernels.cuh"
-#include "include/params.cuh"
+#include "include/params.hpp"
 #include <iostream>
 #include <fstream>
 #include <math.h>
 #include <thread>
 #include <sstream>
 #include <iomanip>
+
+#ifndef Real2
+#define Real2 float2
+#endif
 
 #define USE_FLOAT
 
@@ -55,7 +81,7 @@ Real initializeParamArray(Param p, Param* p_array) {
 
 }
 
-Model::Model(Param param, int deviceID, std::string basePath, unsigned long long seed) {
+Model::Model(Param param, int deviceID, std::string basePath, unsigned long long seed, std::string simulationID) {
     p = param;
     p.S0 = M_PI*p.r0*p.r0;
     numCells = p.numCells;
@@ -125,7 +151,7 @@ Model::Model(Param param, int deviceID, std::string basePath, unsigned long long
     cudaErrCheck(cudaGetLastError());
     curandErrCheck(cudaGetLastError());
 
-    initializeOutput(basePath);
+    initializeOutput(basePath, simulationID);
 }
 
 Model::~Model() {
@@ -153,7 +179,6 @@ Model::~Model() {
     delete[] grid_location;
     delete[] com;
     delete[] comA;
-
 
     cublasErrCheck(cublasDestroy(handle));
 
@@ -230,14 +255,18 @@ void Model::initializeCellGrid(Real populationRadius) {
     }
 }
 
-void Model::initializeOutput(std::string basePath) {
+void Model::initializeOutput(std::string basePath, std::string simulationID) {
     using std::string;
     // Get the current time and date
-    std::ostringstream oss;
-    auto t = std::time(nullptr);
-    auto tm = *std::localtime(&t);
-    oss << std::put_time(&tm, "%Y%m%d_%H%M%S");
-    string time_str = oss.str();
+    string time_str = simulationID;
+    if (time_str == "")
+    {
+        std::ostringstream oss;
+        auto t = std::time(nullptr);
+        auto tm = *std::localtime(&t);
+        oss << std::put_time(&tm, "%Y%m%d_%H%M%S");
+        time_str = oss.str();
+    }
     time_str += "_" + std::to_string(deviceID_);
 
     A_output.open(basePath + "A_" + time_str + ".dat", std::ios::binary);
@@ -247,7 +276,8 @@ void Model::initializeOutput(std::string basePath) {
     C_output.open(basePath + "C_" + time_str + ".dat", std::ios::binary);
 #endif
 
-    writeParamFile(basePath +  "param_" + time_str + ".txt", p, rngSeed);
+    writeParamToTOML(p, basePath + "param_" + time_str + ".toml", rngSeed);
+    
     dynamics_output.open(basePath + "dynamics_" + time_str + ".dat", std::ios::binary);
     // dynamics_output << "t,cell,grid_offset_x,grid_offset_y,phi_area,A_area,com_x,com_y,comA_x,comA_y" << "\n";
     // write the number of columns and byte size of columns in the dyanmics output file
@@ -433,12 +463,36 @@ void Model::updateCOM() {
     cudaErrCheck(cudaMemcpy(comA, d_comA, numCells*sizeof(Real2), cudaMemcpyDeviceToHost));
     cudaErrCheck(cudaMemcpy(area, d_area, numCells*sizeof(Real), cudaMemcpyDeviceToHost));
     cudaErrCheck(cudaMemcpy(Aarea, d_Aarea, numCells*sizeof(Real), cudaMemcpyDeviceToHost));
+    cudaErrCheck(cudaDeviceSynchronize());
     for (int i=0; i < numCells; ++i)
     {
         com[i].x /= area[i];
         com[i].y /= area[i];
-        comA[i].x /= Aarea[i];
-        comA[i].y /= Aarea[i];
+        if (Aarea[i] < 1e-6)
+        {
+            comA[i].x = 0;
+            comA[i].y = 0;
+        }
+        else
+        {
+            comA[i].x /= Aarea[i];
+            comA[i].y /= Aarea[i];
+        }
+
+        if (std::isnan(com[i].x) || std::isnan(com[i].y) )
+        {
+            std::cerr << "Error: COM" << i << " is NaN" << "\n";
+            std::cerr << "Area: " << area[i] << "\n";
+            std::cerr << "COM: " << com[i].x << ", " << com[i].y << "\n";
+            throw std::runtime_error("COM is NaN");
+        }
+        if (std::isnan(comA[i].x) || std::isnan(comA[i].y) )
+        {
+            std::cerr << "Error: COMA is NaN" << "\n";
+            std::cerr << "Area: " << Aarea[i] << "\n";
+            std::cerr << "COMA: " << comA[i].x << ", " << comA[i].y << "\n";
+            throw std::runtime_error("COMA is NaN");
+        }
     }
 
 }
@@ -550,7 +604,6 @@ WriteError Model::makeCondensedOutput(Real* field1, Real* field2, std::ofstream&
                 int xcoord = grid_location[k].x + i - min_grid_location.x;
                 int ycoord = grid_location[k].y + j - min_grid_location.y;
                 condensed_field[ycoord*condensed_size_x + xcoord] += field1[k*p.N*p.N + j*p.N + i] * field2[k*p.N*p.N + j*p.N + i];
-
             }
         }
     }
@@ -623,39 +676,5 @@ void Model::writeInBackground( bool useCondensedOutput) {
     std::thread backgroundThread(&Model::write, this, useCondensedOutput);
     backgroundThread.detach(); // Detach the thread to run in the background
     
-}
-
-std::vector<Real> range(Real start, Real stop, Real step) {
-    std::vector<Real> result;
-    for (Real i = start; i < stop; i += step) {
-        result.push_back(i);
-    }
-    return result;
-}
-
-std::vector<std::vector<Real>> getAllCombinations(std::vector<std::vector<Real>> params) {
-    // get all the combinations from all lists of parameters
-    std::vector<std::vector<Real>> result;
-    if (params.size() == 0)
-        return result;
-    if (params.size() == 1)
-    {
-        for (auto p : params[0])
-        {
-            result.push_back({p});
-        }
-        return result;
-    }
-    std::vector<std::vector<Real>> rest = getAllCombinations(std::vector<std::vector<Real>>(params.begin()+1, params.end()));
-    for (auto p : params[0])
-    {
-        for (auto r : rest)
-        {
-            std::vector<Real> temp = {p};
-            temp.insert(temp.end(), r.begin(), r.end());
-            result.push_back(temp);
-        }
-    }
-    return result;
 }
 
