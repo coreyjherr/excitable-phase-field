@@ -18,7 +18,7 @@ set(SOURCES
 )
 
 # set the executable directory
-set(CMAKE_RUNTIME_OUTPUT_DIRECTORY /home/cherr/workspace/stochastic_phase_field_model)
+set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_CURRENT_LIST_DIR})
 add_executable(run_phase_field ${SOURCES})
 
 target_link_libraries(run_phase_field PRIVATE -lcublas -lcurand)
@@ -26,8 +26,13 @@ set_property(TARGET run_phase_field PROPERTY CUDA_SEPARABLE_COMPILATION ON)
 set_property(TARGET run_phase_field PROPERTY CUDA_ARCHITECTURES 75)
 target_compile_options(run_phase_field PUBLIC -O3)
 
-option(CHEMO "Use chemo" OFF)
+option(CHEMO "Use chemotaxis" OFF)
+option(USE_BACKLOG "Use gpu backlog for outputs" OFF)
 
 if(CHEMO)
     target_compile_definitions(run_phase_field PRIVATE USE_CHEMO)
+endif()
+
+if(USE_BACKLOG)
+    target_compile_definitions(run_phase_field PRIVATE USE_DEVICE_BACKLOG)
 endif()

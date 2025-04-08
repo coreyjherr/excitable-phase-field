@@ -26,13 +26,9 @@ SOFTWARE
 #include <cublas_v2.h>
 #include <curand_kernel.h>
 #include "params.hpp"
+#include "kernels.cuh"
 #include <fstream>
 #include <mutex>
-#include <vector>
-
-#ifndef Real2
-#define Real2 float2
-#endif
 
 typedef int WriteError ;
 
@@ -40,10 +36,10 @@ class Model {
 private:
     Real* d_ones, *d_beta, *d_alpha;
 
-    cudaStream_t streams[32];
     int blockSizeX = 16;
     int blockSizeY = 16;
     int blockSizeZ = 1;
+    int blocksNumCells, threadsNumCells;
     int startupSteps = 50000;
 
     Real *phi, *A, *R, *C, *area, *Aarea;
@@ -66,17 +62,22 @@ private:
     void initializeHostMemory();
     void initializePhi();
     std::mutex fileMutex;
+    Real *d_output, *h_output;
+    Real *d_tmp_com;
 
     void rollAllFieldsX();
     void rollAllFieldsY();
     void initializeCellGrid(Real totalArea);
     void initializeOutput(std::string basePath, std::string simulationID);
+    void initializeDynamicsOutput(std::string basePath, std::string simulationID);
+    void copyToBacklog(int step, int backlog_index); 
+    bool writeFullOutput_;
 
 public:
     unsigned long long rngSeed;
     dim3 grid, block, Cblocks, Cthreads_per_block;
     Real *d_phi;
-    Model(Param p, int deviceID = 0, std::string basePath = "./results/", unsigned long long seed=0, std::string simulationID="");
+    Model(Param p, int deviceID = 0, std::string basePath = "./results/", unsigned long long seed=0, std::string simulationID="", bool writeOutput=true);
     ~Model();
     void simulate(bool progressBar = true, bool useCondensedOutput = false);
     void updatePhi(int t);

@@ -27,6 +27,14 @@ SOFTWARE
 // #include <__clang_cuda_runtime_wrapper.h>
 #include <curand_kernel.h>
 
+// #define USE_FLOAT
+
+#ifdef USE_FLOAT
+using Real2 = float2;
+#else
+using Real2 = double2;
+#endif
+
 __device__ __forceinline__ Real laplacian(Real *phi, int i, int j, int k, Param p);
 __device__ __forceinline__ Real derivativeX(Real *phi, int i, int j, int k, Param p);
 __device__ __forceinline__ Real derivativeY(Real *phi, int i, int j, int k, Param p);
@@ -55,5 +63,8 @@ __global__ void createCOMAYKernel(Real* phi, Real* A, Real* buffer, Param* p);
 __global__ void createCOMAXKernel(Real* phi, Real* A, Real* buffer, Param* p);
 __global__ void multiplyKernel(Real* in1, Real* in2, Real* out, Param* p);
 __global__ void makeLabelImage(Real* phi, Real* buffer, int2* grid_location, Param* p);
+__global__ void copyToBacklogKernel(Real* d_outputs, Real2* d_com, Real2* d_comA, Real* d_area, Real* d_Aarea, int2* d_grid_location, int numCells, int step, int backlog_index);
+__global__ void copyToX(Real* tmp_com, Real2* d_com, int numCells);
+__global__ void copyToY(Real* tmp_com, Real2* d_com, int numCells);
 
 #endif // KERNELS_CUH

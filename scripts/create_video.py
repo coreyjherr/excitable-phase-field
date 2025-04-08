@@ -11,6 +11,67 @@ from matplotlib.cm import ScalarMappable
 import seaborn as sns
 from scipy.ndimage import center_of_mass
 
+class CompressedVideo:
+    def __init__(self, filename: str | Path, dtype: np.dtype = np.float32):
+        self.filename = filename if isinstance(filename, Path) else Path(filename)
+
+        self.file_size_bytes = filename.stat().st_size
+
+        self.frame_sizes = []
+        self.frame_positions = []
+        self.num_frames = 0
+
+        self.video_indexed = False
+
+        self.dtype = dtype
+    
+    def get_compressed_indices(self):
+        current_position = 0
+        current_size = (0, 0)
+        while current_position < self.file_size_bytes:
+            current_size = np.fromfile(
+                self.filename, dtype=np.int32, count=2, offset=self.current_position
+            )
+            self.frame_sizes.append(current_size)
+            self.frame_positions.append(current_position)
+            current_position += current_size[0] * current_size[1] * self.dtype.itemsize
+            self.num_frames += 1
+        self.video_indexed = True
+
+    def __len__(self):
+        if not self.video_indexed:
+            self.get_compressed_indices()
+        return self.num_frames
+    
+    def __getitem__(self, idx):
+        if idx >= self.num_frames:
+            raise IndexError(f"Index {idx} out of bounds")
+        if not self.video_indexed:
+            self.get_compressed_indices()
+        return np.fromfile(
+            self.filename,
+            dtype=self.dtype,
+            count=self.frame_sizes[idx][0] * self.frame_sizes[idx][1],
+            offset=self.frame_positions[idx],
+        ).reshape(self.frame_sizes[idx][1], self.frame_sizes[idx][0]).T
+
+    def __iter__(self):
+        current_size = (0, 0)
+        current_position = 0
+        while current_position < self.file_size_bytes:
+            current_size = np.fromfile(
+                self.filename, dtype=np.int32, count=2, offset=self.current_position
+            )
+            current_position += 8
+            frame = np.fromfile(
+                self.filename,
+                dtype=self.dtype,
+                count=current_size[0] * current_size[1],
+                offset=self.current_position,
+            ).reshape(current_size[1], current_size[0]).T
+            current_position += current_size[0] * current_size[1] * self.dtype.itemsize
+            yield frame
+
 
 def read_dynamics_file(filename: Path, num_rows: int) -> pd.DataFrame:
     # open the file and read the first int to get the number of columns

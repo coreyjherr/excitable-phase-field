@@ -32,19 +32,38 @@ using std::thread;
 
 int main(int argc, char const *argv[]) {
 
-    if (argc > 3 || argc < 2)
+    if (argc > 4 || argc < 2)
     {
-        std::cout << "Usage: ./run_phase_field config.toml [storage_location]" << std::endl;
+        std::cout << "Usage: ./run_phase_field config.toml [storage_location] [fullOutput]" << std::endl;
         return 1;
     }
     std::string configFilePath = argv[1];
     std::string basePath = "./results/";
-    if (argc == 3)
+    bool writeFullOutput = false;
+    if (argc >= 3)
     {
         basePath = argv[2];
         if (basePath.back() != '/')
             basePath += '/';
     }
+    if (argc >= 4) 
+    {
+        std::string fullOutputArg = argv[3];
+        if (fullOutputArg == "1" || fullOutputArg == "true" || fullOutputArg == "True" || fullOutputArg == "TRUE")
+        {
+            writeFullOutput = true; // set to true if you want full output for each simulation
+        }
+        else if (fullOutputArg == "0" || fullOutputArg == "false" || fullOutputArg == "False" || fullOutputArg == "FALSE")
+        {
+            writeFullOutput = false;
+        }
+        else
+        {
+            std::cerr << "Invalid argument for full output. Defaulting to false." << std::endl;
+            writeFullOutput = false;
+        }
+    }
+    
     std::cout << basePath << std::endl;
 
     // load parameters from config file
@@ -90,10 +109,11 @@ int main(int argc, char const *argv[]) {
                 break;
 
             Param param = mapCombinationToParam(allCombinations[idx]);
+            // param.alpha = param.xi * param.alpha; // scale alpha by xi
             unsigned long long seed = 0;
 
-            threads.push_back(thread([thread_index, param, basePath, seed, useCondensed, simulationID](){
-                Model model(param, thread_index, basePath, seed, simulationID);
+            threads.push_back(thread([thread_index, param, basePath, seed, useCondensed, simulationID, writeFullOutput](){
+                Model model(param, thread_index, basePath, seed, simulationID, writeFullOutput);
                 bool progressBar = thread_index==0;
                 try {
                     model.simulate(progressBar, useCondensed);
@@ -115,10 +135,6 @@ int main(int argc, char const *argv[]) {
         std::string command = "scripts/create_video.py " + basePath + " -v -d --glob " + simulationID;
 #endif
 
-        // if (useCondensed)
-        //     command = "scripts/create_video.py " + basePath + " condensed";
-        // else 
-        //     command = "scripts/create_video.py " + basePath + " binary";
 
         int script_result = system(command.c_str());
     }

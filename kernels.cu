@@ -598,3 +598,50 @@ __global__ void makeLabelImage(Real* phi, Real* buffer, int2* grid_location, Par
             buffer[idx] = k+1;
     }
 }
+
+__global__ void copyToBacklogKernel(Real* d_outputs, Real2* d_com, Real2* d_comA, Real* d_area, Real* d_Aarea, int2* d_grid_location, int numCells, int step, int backlog_index) {
+    int i = blockIdx.x * blockDim.x + threadIdx.x;
+    if (i < numCells) {
+        int offset = backlog_index * numCells * 10;
+        d_outputs[offset + i * 10 + 0] = static_cast<Real>(i);
+        d_outputs[offset + i * 10 + 1] = static_cast<Real>(step);
+        d_outputs[offset + i * 10 + 2] = static_cast<Real>(d_grid_location[i].x);
+        d_outputs[offset + i * 10 + 3] = static_cast<Real>(d_grid_location[i].y);
+        d_outputs[offset + i * 10 + 4] = d_area[i];
+        d_outputs[offset + i * 10 + 5] = d_Aarea[i];
+        if (d_area[i] > 1e-6 ){
+            d_com[i].x /= d_area[i];
+            d_com[i].y /= d_area[i];
+        }
+        else {
+            d_com[i].x = 0;
+            d_com[i].y = 0;
+        }
+        if (d_Aarea[i] > 1e-6 ){
+            d_comA[i].x /= d_Aarea[i];
+            d_comA[i].y /= d_Aarea[i];
+        }
+        else {
+            d_comA[i].x = 0;
+            d_comA[i].y = 0;
+        }
+        d_outputs[offset + i * 10 + 6] = d_com[i].x;
+        d_outputs[offset + i * 10 + 7] = d_com[i].y;
+        d_outputs[offset + i * 10 + 8] = d_comA[i].x;
+        d_outputs[offset + i * 10 + 9] = d_comA[i].y;
+    }
+}
+
+__global__ void copyToX(Real* tmp_com, Real2* d_com, int numCells) {
+    int i = blockIdx.x * blockDim.x + threadIdx.x;
+    if (i < numCells) {
+        d_com[i].x = tmp_com[i];
+    }
+}
+
+__global__ void copyToY(Real* tmp_com, Real2* d_com, int numCells) {
+    int i = blockIdx.x * blockDim.x + threadIdx.x;
+    if (i < numCells) {
+        d_com[i].y = tmp_com[i];
+    }
+}

@@ -22,9 +22,13 @@ SOFTWARE
 */
 #ifndef PARAMS_CUH
 #define PARAMS_CUH
+#define USE_FLOAT
 
-typedef float Real;
-#define FLOAT
+#ifdef USE_FLOAT
+using Real = float;
+#else
+using Real = double;
+#endif
 
 #include <fstream>
 #include <vector>
