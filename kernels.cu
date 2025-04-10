@@ -171,7 +171,6 @@ __device__ __forceinline__
 Real laplacian(Real* phi, int i, int j, int k, Param* p) {
     int N = p[k].N;
 
-
     int i1 = (i + 1) % N;
     int i2 = (i - 1 + N) % N;
     int j1 = (j + 1) % N;
@@ -256,9 +255,11 @@ __global__ void updatePhiKernel(Real* phi, Real* A, Real* R, Param *p, Real* are
 
         const int2 thread_loc = {grid_location[k].x + i-N/2, grid_location[k].y + j -N/2};
         Real wall_force = 0;
-        if (thread_loc.x*thread_loc.x + thread_loc.y*thread_loc.y > p[k].R_wall*p[k].R_wall/p[k].dx/p[k].dx)
+        const Real thread_R2 = (thread_loc.x*thread_loc.x + thread_loc.y*thread_loc.y)*p[k].dx*p[k].dx;
+        if (thread_R2 > .8*p[k].R_wall*p[k].R_wall)
         {
-            wall_force = p[k].m_wall_repulsion*phi_;
+            // wall_force = p[k].m_wall_repulsion*phi_;
+            wall_force = 0.5*(1+tanh(3*(sqrt(thread_R2) - p[k].R_wall)/sqrt(p[k].eps2))) * p[k].m_wall_repulsion*phi_;
         }
 
         dphi += sqrt(phi_x * phi_x + phi_y * phi_y) *

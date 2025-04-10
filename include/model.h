@@ -20,20 +20,21 @@ LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE
 */
-#ifndef MODEL_CUH
-#define MODEL_CUH
+#ifndef MODEL_H
+#define MODEL_H
 
-#include <cublas_v2.h>
-#include <curand_kernel.h>
 #include "params.hpp"
-#include "kernels.cuh"
 #include <fstream>
 #include <mutex>
+#include <vector>
 
 typedef int WriteError ;
 
 class Model {
 private:
+    struct CudaTypes;
+    CudaTypes *cudaTypes;
+
     Real* d_ones, *d_beta, *d_alpha;
 
     int blockSizeX = 16;
@@ -44,17 +45,12 @@ private:
 
     Real *phi, *A, *R, *C, *area, *Aarea;
     Real *d_A, *d_R, *d_C, *d_area, *d_Aarea, *d_collision_force, *d_buffer, *d_phi_t, *d_Cbuffer;
-    int2 *d_grid_location, *grid_location, *d_grid_min, *d_grid_max;
-    Real2 *com, *d_com, *comA, *d_comA;
 
     Param p;
     Param *d_Param;
 
     int numCells, deviceID_;
 
-    cublasHandle_t handle;
-
-    curandState *d_states, *d_Rstates;
     std::ofstream phi_output, A_output, label_output, C_output;
     std::ofstream dynamics_output;
 
@@ -75,7 +71,6 @@ private:
 
 public:
     unsigned long long rngSeed;
-    dim3 grid, block, Cblocks, Cthreads_per_block;
     Real *d_phi;
     Model(Param p, int deviceID = 0, std::string basePath = "./results/", unsigned long long seed=0, std::string simulationID="", bool writeOutput=true);
     ~Model();
@@ -89,7 +84,9 @@ public:
     void updateGridLocation();
     void updateCollisionForce();
     void updateBoundingBox();
-    WriteError write(bool useCondensedOutput=false);
+    std::vector<Real> getCOMX();
+    std::vector<Real> getCOMY();
+    WriteError writeFullOutput(bool useCondensedOutput=false);
     WriteError writeDynamics(int step);
     void writeInBackground(bool useCondensedOutput=false);
     void updateCOM();
@@ -97,4 +94,4 @@ public:
     std::string simulationID;
 };
 
-#endif // MODEL_CUH
+#endif // MODEL_H

@@ -21,19 +21,21 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE
 */
 #include "include/indicators.hpp"
-#include "include/model.cuh"
+#include "include/model.h"
 #include "include/error_check.cuh"
-#include <cuda_runtime.h>
-#include <curand_kernel.h>
+#include "include/kernels.cuh"
 #include "include/kernels.cuh"
 #include "include/params.hpp"
+#include <cublas_v2.h>
+#include <curand_kernel.h>
+#include <cuda_runtime.h>
+#include <curand_kernel.h>
 #include <iostream>
 #include <fstream>
 #include <math.h>
 #include <thread>
 #include <sstream>
 #include <iomanip>
-
 
 #ifndef Real2
 #define Real2 float2
@@ -85,7 +87,17 @@ Real initializeParamArray(Param p, Param* p_array) {
 
 }
 
+struct Model::CudaTypes {
+    curandState *d_states, *d_Rstates;
+    int2 *d_grid_location, *grid_location, *d_grid_min, *d_grid_max;
+    Real2 *com, *d_com, *comA, *d_comA;
+    cublasHandle_t handle;
+    dim3 grid, block, Cblocks, Cthreads_per_block;
+};
+
 Model::Model(Param param, int deviceID, std::string basePath, unsigned long long seed, std::string simulationID, bool writeFullOutput) {
+    cudaTypes = new CudaTypes;
+
     p = param;
     p.S0 = M_PI*p.r0*p.r0;
     numCells = p.numCells;
@@ -95,9 +107,8 @@ Model::Model(Param param, int deviceID, std::string basePath, unsigned long long
     cudaErrCheck(cudaSetDevice(deviceID_));
     rngSeed = seed;
 
-    block = dim3(blockSizeX, blockSizeY, blockSizeZ);
-    grid = dim3((p.N + blockSizeX - 1) / blockSizeX, (p.N + blockSizeY - 1) / blockSizeY, (numCells + blockSizeZ - 1) / blockSizeZ);
-
+    cudaTypes->block = dim3(blockSizeX, blockSizeY, blockSizeZ);
+    cudaTypes->grid = dim3((p.N + blockSizeX - 1) / blockSizeX, (p.N + blockSizeY - 1) / blockSizeY, (numCells + blockSizeZ - 1) / blockSizeZ);
 
     Param* paramArray = new Param[numCells];
     Real populationRadius = initializeParamArray(p, paramArray);
@@ -106,8 +117,8 @@ Model::Model(Param param, int deviceID, std::string basePath, unsigned long long
 #else
     p.Nchem = 0;
 #endif
-    Cblocks = dim3(p.Nchem/32 + 1, p.Nchem/32 + 1);
-    Cthreads_per_block = dim3(32, 32 );
+    cudaTypes->Cblocks = dim3(p.Nchem/32 + 1, p.Nchem/32 + 1);
+    cudaTypes->Cthreads_per_block = dim3(32, 32 );
     // std::cout << "Nchem: " << p.Nchem << "\n";
     cudaErrCheck(cudaMalloc((void**)&d_Param, sizeof(Param)*numCells));
     cudaErrCheck(cudaMemcpy(d_Param, paramArray, sizeof(Param)*numCells, cudaMemcpyHostToDevice));
@@ -135,23 +146,23 @@ Model::Model(Param param, int deviceID, std::string basePath, unsigned long long
     cudaErrCheck(cudaMemcpy(d_alpha, alpha, sizeof(Real), cudaMemcpyHostToDevice));
 
     // Initialize phi
-    initializePhiKernel<<<grid, block>>>(d_phi, d_Param);
+    initializePhiKernel<<<cudaTypes->grid, cudaTypes->block>>>(d_phi, d_Param);
     cudaErrCheck(cudaGetLastError());
 
     // Initialize the grid location
     initializeCellGrid(populationRadius);
-    cudaErrCheck(cudaMemcpy(d_grid_location, grid_location, numCells*sizeof(int2), cudaMemcpyHostToDevice));
+    cudaErrCheck(cudaMemcpy(cudaTypes->d_grid_location, cudaTypes->grid_location, numCells*sizeof(int2), cudaMemcpyHostToDevice));
 
     // Initialize cublas
-    cublasErrCheck(cublasCreate(&handle));
-    cublasErrCheck(cublasSetPointerMode(handle, CUBLAS_POINTER_MODE_DEVICE));
+    cublasErrCheck(cublasCreate(&(cudaTypes->handle)));
+    cublasErrCheck(cublasSetPointerMode(cudaTypes->handle, CUBLAS_POINTER_MODE_DEVICE));
 
     // Initialize curand states
-    cudaErrCheck(cudaMalloc((void**)&d_states, numCells*p.N*p.N*sizeof(curandState)));
+    cudaErrCheck(cudaMalloc((void**)&cudaTypes->d_states, numCells*p.N*p.N*sizeof(curandState)));
     // cudaErrCheck(cudaMalloc((void**)&d_Rstates, numCells*p.N*p.N*sizeof(curandState)));
-    setupCurandStates<<<grid, block>>>(d_states, rngSeed, 0, d_Param);
+    setupCurandStates<<<cudaTypes->grid, cudaTypes->block>>>(cudaTypes->d_states, rngSeed, 0, d_Param);
     // cudaErrCheck(cudaGetLastError());
-    // setupCurandStates<<<grid, block>>>(d_Rstates, rngSeed, numCells*p.N*p.N, d_Param);
+    // setupCurandStates<<<cudaTypes->grid, cudaTypes->block>>>(d_Rstates, rngSeed, numCells*p.N*p.N, d_Param);
     cudaErrCheck(cudaGetLastError());
     curandErrCheck(cudaGetLastError());
 
@@ -179,26 +190,26 @@ Model::~Model() {
     cudaErrCheck(cudaFree(d_collision_force));
     cudaErrCheck(cudaFree(d_buffer));
     cudaErrCheck(cudaFree(d_phi_t));
-    cudaErrCheck(cudaFree(d_grid_location));
-    cudaErrCheck(cudaFree(d_grid_min));
-    cudaErrCheck(cudaFree(d_grid_max));
+    cudaErrCheck(cudaFree(cudaTypes->d_grid_location));
+    cudaErrCheck(cudaFree(cudaTypes->d_grid_min));
+    cudaErrCheck(cudaFree(cudaTypes->d_grid_max));
     cudaErrCheck(cudaFree(d_Param));
-    cudaErrCheck(cudaFree(d_states));
+    cudaErrCheck(cudaFree(cudaTypes->d_states));
     // cudaErrCheck(cudaFree(d_Rstates));
-    cudaErrCheck(cudaFree(d_com));
-    cudaErrCheck(cudaFree(d_comA));
+    cudaErrCheck(cudaFree(cudaTypes->d_com));
+    cudaErrCheck(cudaFree(cudaTypes->d_comA));
 
     cudaErrCheck(cudaFreeHost(phi));
     cudaErrCheck(cudaFreeHost(A));
     cudaErrCheck(cudaFreeHost(R));
     cudaErrCheck(cudaFreeHost(area));
     cudaErrCheck(cudaFreeHost(Aarea));
-    cudaErrCheck(cudaFreeHost(grid_location));
-    cudaErrCheck(cudaFreeHost(com));
-    cudaErrCheck(cudaFreeHost(comA));
+    cudaErrCheck(cudaFreeHost(cudaTypes->grid_location));
+    cudaErrCheck(cudaFreeHost(cudaTypes->com));
+    cudaErrCheck(cudaFreeHost(cudaTypes->comA));
     cudaErrCheck(cudaFreeHost(C));
 
-    cublasErrCheck(cublasDestroy(handle));
+    cublasErrCheck(cublasDestroy(cudaTypes->handle));
 
     // Close the output files after mutex lock
     std::lock_guard<std::mutex> guard(fileMutex);
@@ -211,6 +222,7 @@ Model::~Model() {
 #ifdef USE_CHEMO
     C_output.close();
 #endif
+    delete cudaTypes;
 }
 
 void Model::initializeHostMemory() {
@@ -219,9 +231,9 @@ void Model::initializeHostMemory() {
     cudaErrCheck(cudaMallocHost((void**)&R, numCells*p.N*p.N*sizeof(Real)));
     cudaErrCheck(cudaMallocHost((void**)&area, numCells*sizeof(Real)));
     cudaErrCheck(cudaMallocHost((void**)&Aarea, numCells*sizeof(Real)));
-    cudaErrCheck(cudaMallocHost((void**)&grid_location, numCells*sizeof(int2)));
-    cudaErrCheck(cudaMallocHost((void**)&com, numCells*sizeof(Real2)));
-    cudaErrCheck(cudaMallocHost((void**)&comA, numCells*sizeof(Real2)));
+    cudaErrCheck(cudaMallocHost((void**)&cudaTypes->grid_location, numCells*sizeof(int2)));
+    cudaErrCheck(cudaMallocHost((void**)&cudaTypes->com, numCells*sizeof(Real2)));
+    cudaErrCheck(cudaMallocHost((void**)&cudaTypes->comA, numCells*sizeof(Real2)));
     cudaErrCheck(cudaMallocHost((void**)&C, p.Nchem*p.Nchem*sizeof(Real)));
 }
 
@@ -235,11 +247,11 @@ void Model::initializeDeviceMemory() {
     cudaErrCheck(cudaMalloc((void**)&d_collision_force, numCells*p.N*p.N*sizeof(Real)));
     cudaErrCheck(cudaMalloc((void**)&d_buffer, numCells*p.N*p.N*sizeof(Real)));
     cudaErrCheck(cudaMalloc((void**)&d_phi_t, numCells*p.N*p.N*sizeof(Real)));
-    cudaErrCheck(cudaMalloc((void**)&d_grid_min, numCells*sizeof(int2)));
-    cudaErrCheck(cudaMalloc((void**)&d_grid_max, numCells*sizeof(int2)));
-    cudaErrCheck(cudaMalloc((void**)&d_grid_location, numCells*sizeof(int2)));
-    cudaErrCheck(cudaMalloc((void**)&d_com, numCells*sizeof(Real2)));
-    cudaErrCheck(cudaMalloc((void**)&d_comA, numCells*sizeof(Real2)));
+    cudaErrCheck(cudaMalloc((void**)&cudaTypes->d_grid_min, numCells*sizeof(int2)));
+    cudaErrCheck(cudaMalloc((void**)&cudaTypes->d_grid_max, numCells*sizeof(int2)));
+    cudaErrCheck(cudaMalloc((void**)&cudaTypes->d_grid_location, numCells*sizeof(int2)));
+    cudaErrCheck(cudaMalloc((void**)&cudaTypes->d_com, numCells*sizeof(Real2)));
+    cudaErrCheck(cudaMalloc((void**)&cudaTypes->d_comA, numCells*sizeof(Real2)));
     cudaErrCheck(cudaMalloc((void**)&d_C, p.Nchem*p.Nchem*sizeof(Real)));
     cudaErrCheck(cudaMalloc((void**)&d_Cbuffer, p.Nchem*p.Nchem*sizeof(Real)));
 
@@ -252,8 +264,8 @@ void Model::initializeDeviceMemory() {
     cudaErrCheck(cudaMemset(d_collision_force, 0, numCells*p.N*p.N*sizeof(Real)));
     cudaErrCheck(cudaMemset(d_buffer, 0, numCells*p.N*p.N*sizeof(Real)));
     cudaErrCheck(cudaMemset(d_phi_t, 0, numCells*p.N*p.N*sizeof(Real)));
-    cudaErrCheck(cudaMemset(d_com, 0, numCells*sizeof(Real2)));
-    cudaErrCheck(cudaMemset(d_comA, 0, numCells*sizeof(Real2)));
+    cudaErrCheck(cudaMemset(cudaTypes->d_com, 0, numCells*sizeof(Real2)));
+    cudaErrCheck(cudaMemset(cudaTypes->d_comA, 0, numCells*sizeof(Real2)));
     cudaErrCheck(cudaMemset(d_C, 0, p.Nchem*p.Nchem*sizeof(Real)));
     cudaErrCheck(cudaMemset(d_Cbuffer, 0, p.Nchem*p.Nchem*sizeof(Real)));
 
@@ -272,8 +284,8 @@ void Model::initializeCellGrid(Real populationRadius) {
             r = sqrt(1.0*k-0.5)/sqrt(1.0*numCells - (1.0*b+1)/2);
         Real theta = 2*M_PI*k/(phi*phi);
         Real rCircle = populationRadius*r;
-        grid_location[i].x = rCircle/p.dx*cos(theta);
-        grid_location[i].y = rCircle/p.dx*sin(theta);
+        cudaTypes->grid_location[i].x = rCircle/p.dx*cos(theta);
+        cudaTypes->grid_location[i].y = rCircle/p.dx*sin(theta);
     }
 }
 
@@ -369,7 +381,7 @@ void Model::simulate(bool progressBar, bool useCondensedOutput) {
 
         // Hardcode the full output to every 400 steps
         if (t % 400 == 0 && writeFullOutput_) {
-            earlyExit = write(useCondensedOutput);
+            earlyExit = writeFullOutput(useCondensedOutput);
         }
 
         updateCollisionForce();
@@ -387,7 +399,7 @@ void Model::simulate(bool progressBar, bool useCondensedOutput) {
 }
 
 void Model::updateArea() {
-    cublasErrCheck(cublasSgemv(handle, CUBLAS_OP_T, p.N*p.N, numCells, d_alpha, d_phi, p.N*p.N, d_ones, 1, d_beta, d_area, 1));
+    cublasErrCheck(cublasSgemv(cudaTypes->handle, CUBLAS_OP_T, p.N*p.N, numCells, d_alpha, d_phi, p.N*p.N, d_ones, 1, d_beta, d_area, 1));
 }
 
 void Model::updateA_Area() {
@@ -395,205 +407,200 @@ void Model::updateA_Area() {
 
 void Model::updatePhi(int t) {
 #ifdef USE_CHEMO
-    updatePhiKernelChemo<<<grid, block>>>(d_phi, d_A, d_R, d_C, d_Param, d_area, d_grid_location, d_collision_force, d_phi_t, t);
+    updatePhiKernelChemo<<<cudaTypes->grid, cudaTypes->block>>>(d_phi, d_A, d_R, d_C, d_Param, d_area, cudaTypes->d_grid_location, d_collision_force, d_phi_t, t);
 #else
-    updatePhiKernel<<<grid, block>>>(d_phi, d_A, d_R, d_Param, d_area, d_grid_location, d_collision_force, d_phi_t, t);
+    updatePhiKernel<<<cudaTypes->grid, cudaTypes->block>>>(d_phi, d_A, d_R, d_Param, d_area, cudaTypes->d_grid_location, d_collision_force, d_phi_t, t);
 #endif
-    // updatePhiKernel<<<grid, block>>>(d_phi, d_A, d_R, d_Param, d_area, d_grid_location, d_collision_force, d_phi_t, t);
+    // updatePhiKernel<<<cudaTypes->grid, cudaTypes->block>>>(d_phi, d_A, d_R, d_Param, d_area, d_grid_location, d_collision_force, d_phi_t, t);
     cudaErrCheck(cudaGetLastError());
-    cublasErrCheck(cublasRaxpy(handle, numCells*p.N*p.N, &(d_Param->dt), d_phi_t, 1, d_phi, 1));
+    cublasErrCheck(cublasRaxpy(cudaTypes->handle, numCells*p.N*p.N, &(d_Param->dt), d_phi_t, 1, d_phi, 1));
 }
 
 void Model::updateC() {
-    updateCKernel<<<Cblocks, Cthreads_per_block>>>(d_C, d_Cbuffer, d_Param);
+    updateCKernel<<<cudaTypes->Cblocks, cudaTypes->Cthreads_per_block>>>(d_C, d_Cbuffer, d_Param);
     cudaErrCheck(cudaGetLastError());
-    cublasErrCheck(cublasRcopy(handle, p.Nchem*p.Nchem, d_Cbuffer, 1, d_C, 1));
+    cublasErrCheck(cublasRcopy(cudaTypes->handle, p.Nchem*p.Nchem, d_Cbuffer, 1, d_C, 1));
 }
 
 void Model::updateA() {
-    updateAKernel<<<grid, block>>>(d_phi, d_A, d_R, d_Param, d_phi_t, d_grid_location, d_states, d_buffer);
+    updateAKernel<<<cudaTypes->grid, cudaTypes->block>>>(d_phi, d_A, d_R, d_Param, d_phi_t, cudaTypes->d_grid_location, cudaTypes->d_states, d_buffer);
     cudaErrCheck(cudaGetLastError());
-    cublasErrCheck(cublasRaxpy(handle, numCells*p.N*p.N, &(d_Param->dt), d_buffer, 1, d_A, 1));
+    cublasErrCheck(cublasRaxpy(cudaTypes->handle, numCells*p.N*p.N, &(d_Param->dt), d_buffer, 1, d_A, 1));
 }
 
 void Model::updateR() {
 #ifdef USE_CHEMO
-    updateRKernelChemo<<<grid, block>>>(d_phi, d_A, d_R, d_C, d_Param, d_phi_t, d_grid_location, d_Rstates, d_buffer);
+    updateRKernelChemo<<<cudaTypes->grid, cudaTypes->block>>>(d_phi, d_A, d_R, d_C, d_Param, d_phi_t, cudaTypes->d_grid_location, cudaTypes->d_Rstates, d_buffer);
 #else
-    updateRKernel<<<grid, block>>>(d_phi, d_A, d_R, d_Param, d_phi_t, d_grid_location, d_states, d_buffer);
+    updateRKernel<<<cudaTypes->grid, cudaTypes->block>>>(d_phi, d_A, d_R, d_Param, d_phi_t, cudaTypes->d_grid_location, cudaTypes->d_states, d_buffer);
 #endif
     cudaErrCheck(cudaGetLastError());
-    cublasErrCheck(cublasRaxpy(handle, numCells*p.N*p.N, &(d_Param->dt), d_buffer, 1, d_R, 1));
+    cublasErrCheck(cublasRaxpy(cudaTypes->handle, numCells*p.N*p.N, &(d_Param->dt), d_buffer, 1, d_R, 1));
 }
 
 
 void Model::updateCollisionForce() {
-    updateCollisionForceKernel<<<grid, block>>>(d_phi, d_grid_location, d_Param, d_collision_force);
+    updateCollisionForceKernel<<<cudaTypes->grid, cudaTypes->block>>>(d_phi, cudaTypes->d_grid_location, d_Param, d_collision_force);
     cudaErrCheck(cudaGetLastError());
 }
 
 void Model::updateGridLocation() {
-    getXIndexMaskedKernel<<<grid, block>>>(d_phi, d_buffer, d_Param, 0.025);
+    getXIndexMaskedKernel<<<cudaTypes->grid, cudaTypes->block>>>(d_phi, d_buffer, d_Param, 0.025);
     cudaErrCheck(cudaGetLastError());
     for (int i = 0; i < numCells; ++i) {
-        cublasErrCheck(cublasIramax(handle, p.N*p.N, d_buffer + i*p.N*p.N, 1, &(d_grid_max + i)->x));
-        cublasErrCheck(cublasIramin(handle, p.N*p.N, d_buffer + i*p.N*p.N, 1, &(d_grid_min + i)->x));
+        cublasErrCheck(cublasIramax(cudaTypes->handle, p.N*p.N, d_buffer + i*p.N*p.N, 1, &(cudaTypes->d_grid_max + i)->x));
+        cublasErrCheck(cublasIramin(cudaTypes->handle, p.N*p.N, d_buffer + i*p.N*p.N, 1, &(cudaTypes->d_grid_min + i)->x));
     }
     cudaErrCheck(cudaDeviceSynchronize());
     rollAllFieldsX();
 
-    getYIndexMaskedKernel<<<grid, block>>>(d_phi, d_buffer, d_Param, 0.025);
+    getYIndexMaskedKernel<<<cudaTypes->grid, cudaTypes->block>>>(d_phi, d_buffer, d_Param, 0.025);
     cudaErrCheck(cudaGetLastError());
     for (int i = 0; i < numCells; ++i) {
-        cublasErrCheck(cublasIramax(handle, p.N*p.N, d_buffer + i*p.N*p.N, 1, &((d_grid_max + i)->y)));
-        cublasErrCheck(cublasIramin(handle, p.N*p.N, d_buffer + i*p.N*p.N, 1, &((d_grid_min + i)->y)));
+        cublasErrCheck(cublasIramax(cudaTypes->handle, p.N*p.N, d_buffer + i*p.N*p.N, 1, &((cudaTypes->d_grid_max + i)->y)));
+        cublasErrCheck(cublasIramin(cudaTypes->handle, p.N*p.N, d_buffer + i*p.N*p.N, 1, &((cudaTypes->d_grid_min + i)->y)));
     }
     cudaErrCheck(cudaDeviceSynchronize());
     rollAllFieldsY();
     cudaErrCheck(cudaDeviceSynchronize());
 
 
-    updateGridLocationKernel<<<blocksNumCells, threadsNumCells>>>(d_grid_min, d_grid_location, d_Param);
+    updateGridLocationKernel<<<blocksNumCells, threadsNumCells>>>(cudaTypes->d_grid_min, cudaTypes->d_grid_location, d_Param);
     cudaErrCheck(cudaGetLastError());
-    updateGridLocationKernel<<<blocksNumCells, threadsNumCells>>>(d_grid_max, d_grid_location, d_Param);
+    updateGridLocationKernel<<<blocksNumCells, threadsNumCells>>>(cudaTypes->d_grid_max, cudaTypes->d_grid_location, d_Param);
     cudaErrCheck(cudaGetLastError());
 
 }
 
 void Model::updateBoundingBox() {
     // Store the bounding box location for each cell inside d_grid_max and d_grid_min
-    getXIndexMaskedKernel<<<grid, block>>>(d_phi, d_buffer, d_Param, 0.0025);
+    getXIndexMaskedKernel<<<cudaTypes->grid, cudaTypes->block>>>(d_phi, d_buffer, d_Param, 0.0025);
     for (int i = 0; i < numCells; ++i) {
-        cublasErrCheck(cublasIramax(handle, p.N*p.N, d_buffer + i*p.N*p.N, 1, &(d_grid_max + i)->x));
-        cublasErrCheck(cublasIramin(handle, p.N*p.N, d_buffer + i*p.N*p.N, 1, &(d_grid_min + i)->x));
+        cublasErrCheck(cublasIramax(cudaTypes->handle, p.N*p.N, d_buffer + i*p.N*p.N, 1, &(cudaTypes->d_grid_max + i)->x));
+        cublasErrCheck(cublasIramin(cudaTypes->handle, p.N*p.N, d_buffer + i*p.N*p.N, 1, &(cudaTypes->d_grid_min + i)->x));
     }
 
-    getYIndexMaskedKernel<<<grid, block>>>(d_phi, d_buffer, d_Param, 0.0025);
+    getYIndexMaskedKernel<<<cudaTypes->grid, cudaTypes->block>>>(d_phi, d_buffer, d_Param, 0.0025);
     for (int i = 0; i < numCells; ++i) {
-        cublasErrCheck(cublasIramax(handle, p.N*p.N, d_buffer + i*p.N*p.N, 1, &((d_grid_max + i)->y)));
-        cublasErrCheck(cublasIramin(handle, p.N*p.N, d_buffer + i*p.N*p.N, 1, &((d_grid_min + i)->y)));
+        cublasErrCheck(cublasIramax(cudaTypes->handle, p.N*p.N, d_buffer + i*p.N*p.N, 1, &((cudaTypes->d_grid_max + i)->y)));
+        cublasErrCheck(cublasIramin(cudaTypes->handle, p.N*p.N, d_buffer + i*p.N*p.N, 1, &((cudaTypes->d_grid_min + i)->y)));
     }
 
-    updateBoundingIndex<<<blocksNumCells, threadsNumCells>>>(d_grid_min, d_Param);
-    updateBoundingIndex<<<blocksNumCells, threadsNumCells>>>(d_grid_max, d_Param);
+    updateBoundingIndex<<<blocksNumCells, threadsNumCells>>>(cudaTypes->d_grid_min, d_Param);
+    updateBoundingIndex<<<blocksNumCells, threadsNumCells>>>(cudaTypes->d_grid_max, d_Param);
 }
 
 void Model::updateCOM() {
     // Calculate the center of mass of each cell within its own grid
-    int threadsPerBlock = 256;
-    int blocks = (numCells + threadsPerBlock - 1) / threadsPerBlock;
     // Calculate the center of mass of each cell within its own grid
-    createCOMXKernel<<<grid, block>>>(d_phi, d_buffer, d_Param);
+    createCOMXKernel<<<cudaTypes->grid, cudaTypes->block>>>(d_phi, d_buffer, d_Param);
     cudaErrCheck(cudaGetLastError());
 
     // Commented out the loop and replaced with cublasSgemv
     // for (int i = 0; i < numCells; ++i) {
-    //     cublasRasum(handle, p.N*p.N, d_buffer + i*p.N*p.N, 1, &((d_com + i)->x));
+    //     cublasRasum(cudaTypes->handle, p.N*p.N, d_buffer + i*p.N*p.N, 1, &((cudaTypes->d_com + i)->x));
     // }
-    cublasErrCheck(cublasSgemv(handle, CUBLAS_OP_T, p.N * p.N, numCells, d_alpha, d_buffer, p.N * p.N, d_ones, 1, d_beta, d_tmp_com, 1));
-    copyToX<<<blocksNumCells, threadsNumCells>>>(d_tmp_com, d_com, numCells);
+    cublasErrCheck(cublasSgemv(cudaTypes->handle, CUBLAS_OP_T, p.N * p.N, numCells, d_alpha, d_buffer, p.N * p.N, d_ones, 1, d_beta, d_tmp_com, 1));
+    copyToX<<<blocksNumCells, threadsNumCells>>>(d_tmp_com, cudaTypes->d_com, numCells);
 
-    createCOMYKernel<<<grid, block>>>(d_phi, d_buffer, d_Param);
+    createCOMYKernel<<<cudaTypes->grid, cudaTypes->block>>>(d_phi, d_buffer, d_Param);
     cudaErrCheck(cudaGetLastError());
 
     // Commented out the loop and replaced with cublasSgemv
     // for (int i = 0; i < numCells; ++i) {
-    //     cublasRasum(handle, p.N*p.N, d_buffer + i*p.N*p.N, 1, &((d_com + i)->y));
+    //     cublasRasum(cudaTypes->handle, p.N*p.N, d_buffer + i*p.N*p.N, 1, &((cudaTypes->d_com + i)->y));
     // }
-    cublasErrCheck(cublasSgemv(handle, CUBLAS_OP_T, p.N * p.N, numCells, d_alpha, d_buffer, p.N * p.N, d_ones, 1, d_beta, d_tmp_com, 1));
-    copyToY<<<blocksNumCells, threadsNumCells>>>(d_tmp_com, d_com, numCells);
+    cublasErrCheck(cublasSgemv(cudaTypes->handle, CUBLAS_OP_T, p.N * p.N, numCells, d_alpha, d_buffer, p.N * p.N, d_ones, 1, d_beta, d_tmp_com, 1));
+    copyToY<<<blocksNumCells, threadsNumCells>>>(d_tmp_com, cudaTypes->d_com, numCells);
 
-    multiplyKernel<<<grid, block>>>(d_phi, d_A, d_buffer, d_Param);
+    multiplyKernel<<<cudaTypes->grid, cudaTypes->block>>>(d_phi, d_A, d_buffer, d_Param);
     cudaErrCheck(cudaGetLastError());
 
     // Commented out the loop and replaced with cublasSgemv
     // for (int i = 0; i < numCells; ++i) {
-    //     cublasRasum(handle, p.N*p.N, d_buffer + i*p.N*p.N, 1, &d_Aarea[i]);
+    //     cublasRasum(cudaTypes->handle, p.N*p.N, d_buffer + i*p.N*p.N, 1, &d_Aarea[i]);
     // }
-    cublasErrCheck(cublasSgemv(handle, CUBLAS_OP_T, p.N * p.N, numCells, d_alpha, d_buffer, p.N * p.N, d_ones, 1, d_beta, d_Aarea, 1));
+    cublasErrCheck(cublasSgemv(cudaTypes->handle, CUBLAS_OP_T, p.N * p.N, numCells, d_alpha, d_buffer, p.N * p.N, d_ones, 1, d_beta, d_Aarea, 1));
 
-    createCOMAXKernel<<<grid, block>>>(d_phi, d_A, d_buffer, d_Param);
+    createCOMAXKernel<<<cudaTypes->grid, cudaTypes->block>>>(d_phi, d_A, d_buffer, d_Param);
     cudaErrCheck(cudaGetLastError());
 
     // Commented out the loop and replaced with cublasSgemv
     // for (int i = 0; i < numCells; ++i) {
-    //     cublasRasum(handle, p.N*p.N, d_buffer + i*p.N*p.N, 1, &((d_comA + i)->x));
+    //     cublasRasum(cudaTypes->handle, p.N*p.N, d_buffer + i*p.N*p.N, 1, &((cudaTypes->d_comA + i)->x));
     // }
-    cublasErrCheck(cublasSgemv(handle, CUBLAS_OP_T, p.N * p.N, numCells, d_alpha, d_buffer, p.N * p.N, d_ones, 1, d_beta, d_tmp_com, 1));
-    copyToX<<<blocksNumCells, threadsNumCells>>>(d_tmp_com, d_comA, numCells);
+    cublasErrCheck(cublasSgemv(cudaTypes->handle, CUBLAS_OP_T, p.N * p.N, numCells, d_alpha, d_buffer, p.N * p.N, d_ones, 1, d_beta, d_tmp_com, 1));
+    copyToX<<<blocksNumCells, threadsNumCells>>>(d_tmp_com, cudaTypes->d_comA, numCells);
 
-    createCOMAYKernel<<<grid, block>>>(d_phi, d_A, d_buffer, d_Param);
+    createCOMAYKernel<<<cudaTypes->grid, cudaTypes->block>>>(d_phi, d_A, d_buffer, d_Param);
     cudaErrCheck(cudaGetLastError());
 
     // Commented out the loop and replaced with cublasSgemv
     // for (int i = 0; i < numCells; ++i) {
-    //     cublasRasum(handle, p.N*p.N, d_buffer + i*p.N*p.N, 1, &((d_comA + i)->y));
+    //     cublasRasum(cudaTypes->handle, p.N*p.N, d_buffer + i*p.N*p.N, 1, &((cudaTypes->d_comA + i)->y));
     // }
-    cublasErrCheck(cublasSgemv(handle, CUBLAS_OP_T, p.N * p.N, numCells, d_alpha, d_buffer, p.N * p.N, d_ones, 1, d_beta, d_tmp_com, 1));
-    copyToY<<<blocksNumCells, threadsNumCells>>>(d_tmp_com, d_comA, numCells);
+    cublasErrCheck(cublasSgemv(cudaTypes->handle, CUBLAS_OP_T, p.N * p.N, numCells, d_alpha, d_buffer, p.N * p.N, d_ones, 1, d_beta, d_tmp_com, 1));
+    copyToY<<<blocksNumCells, threadsNumCells>>>(d_tmp_com, cudaTypes->d_comA, numCells);
 
     // copy
 }
 
 void Model::rollAllFieldsX() {
-    rollGridXKernel<<<grid, block>>>(d_phi, d_buffer, d_grid_max, d_Param);
-    cublasErrCheck(cublasRswap(handle, numCells*p.N*p.N, d_buffer, 1, d_phi, 1));
+    rollGridXKernel<<<cudaTypes->grid, cudaTypes->block>>>(d_phi, d_buffer, cudaTypes->d_grid_max, d_Param);
+    cublasErrCheck(cublasRswap(cudaTypes->handle, numCells*p.N*p.N, d_buffer, 1, d_phi, 1));
 
-    rollGridXKernel<<<grid, block>>>(d_phi, d_buffer, d_grid_min, d_Param);
-    cublasErrCheck(cublasRswap(handle, numCells*p.N*p.N, d_buffer, 1, d_phi, 1));
+    rollGridXKernel<<<cudaTypes->grid, cudaTypes->block>>>(d_phi, d_buffer, cudaTypes->d_grid_min, d_Param);
+    cublasErrCheck(cublasRswap(cudaTypes->handle, numCells*p.N*p.N, d_buffer, 1, d_phi, 1));
 
-    rollGridXKernel<<<grid, block>>>(d_A, d_buffer, d_grid_max, d_Param);
-    cublasErrCheck(cublasRswap(handle, numCells*p.N*p.N, d_buffer, 1, d_A, 1));
+    rollGridXKernel<<<cudaTypes->grid, cudaTypes->block>>>(d_A, d_buffer, cudaTypes->d_grid_max, d_Param);
+    cublasErrCheck(cublasRswap(cudaTypes->handle, numCells*p.N*p.N, d_buffer, 1, d_A, 1));
 
-    rollGridXKernel<<<grid, block>>>(d_A, d_buffer, d_grid_min, d_Param);
-    cublasErrCheck(cublasRswap(handle, numCells*p.N*p.N, d_buffer, 1, d_A, 1));
+    rollGridXKernel<<<cudaTypes->grid, cudaTypes->block>>>(d_A, d_buffer, cudaTypes->d_grid_min, d_Param);
+    cublasErrCheck(cublasRswap(cudaTypes->handle, numCells*p.N*p.N, d_buffer, 1, d_A, 1));
 
-    rollGridXKernel<<<grid, block>>>(d_R, d_buffer, d_grid_max, d_Param);
-    cublasErrCheck(cublasRswap(handle, numCells*p.N*p.N, d_buffer, 1, d_R, 1));
+    rollGridXKernel<<<cudaTypes->grid, cudaTypes->block>>>(d_R, d_buffer, cudaTypes->d_grid_max, d_Param);
+    cublasErrCheck(cublasRswap(cudaTypes->handle, numCells*p.N*p.N, d_buffer, 1, d_R, 1));
 
-    rollGridXKernel<<<grid, block>>>(d_R, d_buffer, d_grid_min, d_Param);
-    cublasErrCheck(cublasRswap(handle, numCells*p.N*p.N, d_buffer, 1, d_R, 1));
+    rollGridXKernel<<<cudaTypes->grid, cudaTypes->block>>>(d_R, d_buffer, cudaTypes->d_grid_min, d_Param);
+    cublasErrCheck(cublasRswap(cudaTypes->handle, numCells*p.N*p.N, d_buffer, 1, d_R, 1));
 }
 
 void Model::rollAllFieldsY() {
-    rollGridYKernel<<<grid, block>>>(d_phi, d_buffer, d_grid_max, d_Param);
-    cublasErrCheck(cublasRswap(handle, numCells*p.N*p.N, d_buffer, 1, d_phi, 1));
+    rollGridYKernel<<<cudaTypes->grid, cudaTypes->block>>>(d_phi, d_buffer, cudaTypes->d_grid_max, d_Param);
+    cublasErrCheck(cublasRswap(cudaTypes->handle, numCells*p.N*p.N, d_buffer, 1, d_phi, 1));
 
-    rollGridYKernel<<<grid, block>>>(d_phi, d_buffer, d_grid_min, d_Param);
-    cublasErrCheck(cublasRswap(handle, numCells*p.N*p.N, d_buffer, 1, d_phi, 1));
+    rollGridYKernel<<<cudaTypes->grid, cudaTypes->block>>>(d_phi, d_buffer, cudaTypes->d_grid_min, d_Param);
+    cublasErrCheck(cublasRswap(cudaTypes->handle, numCells*p.N*p.N, d_buffer, 1, d_phi, 1));
 
-    rollGridYKernel<<<grid, block>>>(d_A, d_buffer, d_grid_max, d_Param);
-    cublasErrCheck(cublasRswap(handle, numCells*p.N*p.N, d_buffer, 1, d_A, 1));
+    rollGridYKernel<<<cudaTypes->grid, cudaTypes->block>>>(d_A, d_buffer, cudaTypes->d_grid_max, d_Param);
+    cublasErrCheck(cublasRswap(cudaTypes->handle, numCells*p.N*p.N, d_buffer, 1, d_A, 1));
 
-    rollGridYKernel<<<grid, block>>>(d_A, d_buffer, d_grid_min, d_Param);
-    cublasErrCheck(cublasRswap(handle, numCells*p.N*p.N, d_buffer, 1, d_A, 1));
+    rollGridYKernel<<<cudaTypes->grid, cudaTypes->block>>>(d_A, d_buffer, cudaTypes->d_grid_min, d_Param);
+    cublasErrCheck(cublasRswap(cudaTypes->handle, numCells*p.N*p.N, d_buffer, 1, d_A, 1));
 
-    rollGridYKernel<<<grid, block>>>(d_R, d_buffer, d_grid_max, d_Param);
-    cublasErrCheck(cublasRswap(handle, numCells*p.N*p.N, d_buffer, 1, d_R, 1));
+    rollGridYKernel<<<cudaTypes->grid, cudaTypes->block>>>(d_R, d_buffer, cudaTypes->d_grid_max, d_Param);
+    cublasErrCheck(cublasRswap(cudaTypes->handle, numCells*p.N*p.N, d_buffer, 1, d_R, 1));
 
-    rollGridYKernel<<<grid, block>>>(d_R, d_buffer, d_grid_min, d_Param);
-    cublasErrCheck(cublasRswap(handle, numCells*p.N*p.N, d_buffer, 1, d_R, 1));
+    rollGridYKernel<<<cudaTypes->grid, cudaTypes->block>>>(d_R, d_buffer, cudaTypes->d_grid_min, d_Param);
+    cublasErrCheck(cublasRswap(cudaTypes->handle, numCells*p.N*p.N, d_buffer, 1, d_R, 1));
 }
 
 
 WriteError Model::makeCondensedOutput(Real* field1, Real* field2, std::ofstream& outputField)
 {
     int2 min_grid_location;
-    min_grid_location.x = grid_location[0].x;
-    min_grid_location.y = grid_location[0].y;
+    min_grid_location.x = cudaTypes->grid_location[0].x;
+    min_grid_location.y = cudaTypes->grid_location[0].y;
     int2 max_grid_location;
-    max_grid_location.x = grid_location[0].x;
-    max_grid_location.y = grid_location[0].y;
-
-    // Hardcoded cutoff radius for the condensed field size
-    int R_cutoff = 512; 
+    max_grid_location.x = cudaTypes->grid_location[0].x;
+    max_grid_location.y = cudaTypes->grid_location[0].y;
 
     for (int i=0; i<numCells; i++)
     {
-        min_grid_location.x = grid_location[i].x < min_grid_location.x ? grid_location[i].x : min_grid_location.x;
-        min_grid_location.y = grid_location[i].y < min_grid_location.y ? grid_location[i].y : min_grid_location.y;
-        max_grid_location.x = grid_location[i].x > max_grid_location.x ? grid_location[i].x : max_grid_location.x;
-        max_grid_location.y = grid_location[i].y > max_grid_location.y ? grid_location[i].y : max_grid_location.y;
+        min_grid_location.x = cudaTypes->grid_location[i].x < min_grid_location.x ? cudaTypes->grid_location[i].x : min_grid_location.x;
+        min_grid_location.y = cudaTypes->grid_location[i].y < min_grid_location.y ? cudaTypes->grid_location[i].y : min_grid_location.y;
+        max_grid_location.x = cudaTypes->grid_location[i].x > max_grid_location.x ? cudaTypes->grid_location[i].x : max_grid_location.x;
+        max_grid_location.y = cudaTypes->grid_location[i].y > max_grid_location.y ? cudaTypes->grid_location[i].y : max_grid_location.y;
     }
 
     int condensed_size_x = max_grid_location.x - min_grid_location.x + p.N;
@@ -611,10 +618,7 @@ WriteError Model::makeCondensedOutput(Real* field1, Real* field2, std::ofstream&
     }
 
     Real* condensed_field = new Real[condensed_size_x*condensed_size_y];
-    for (int i=0; i<condensed_size_x*condensed_size_y; i++)
-    {
-        condensed_field[i] = 0;
-    }
+    memset(condensed_field, 0, condensed_size_x*condensed_size_y*sizeof(Real));
 
     if (field2 == nullptr)
     {
@@ -624,8 +628,8 @@ WriteError Model::makeCondensedOutput(Real* field1, Real* field2, std::ofstream&
         {
             for (int j=0; j<p.N; j++)
             {
-                int xcoord = grid_location[k].x + i - min_grid_location.x;
-                int ycoord = grid_location[k].y + j - min_grid_location.y;
+                int xcoord = cudaTypes->grid_location[k].x + i - min_grid_location.x;
+                int ycoord = cudaTypes->grid_location[k].y + j - min_grid_location.y;
                 condensed_field[ycoord*condensed_size_x + xcoord] += field1[k*p.N*p.N + j*p.N + i];
             }
         }
@@ -639,8 +643,8 @@ WriteError Model::makeCondensedOutput(Real* field1, Real* field2, std::ofstream&
         {
             for (int j=0; j<p.N; j++)
             {
-                int xcoord = grid_location[k].x + i - min_grid_location.x;
-                int ycoord = grid_location[k].y + j - min_grid_location.y;
+                int xcoord = cudaTypes->grid_location[k].x + i - min_grid_location.x;
+                int ycoord = cudaTypes->grid_location[k].y + j - min_grid_location.y;
                 condensed_field[ycoord*condensed_size_x + xcoord] += field1[k*p.N*p.N + j*p.N + i] * field2[k*p.N*p.N + j*p.N + i];
             }
         }
@@ -661,7 +665,7 @@ WriteError Model::writeDynamics(int step) {
     int threadsPerBlock = 256;
     int numBlocks = (numCells + threadsPerBlock - 1) / threadsPerBlock;
     static int backlog_step = 0;
-    copyToBacklogKernel<<<numBlocks, threadsPerBlock>>>(d_output, d_com, d_comA, d_area, d_Aarea, d_grid_location, numCells, step, backlog_step);
+    copyToBacklogKernel<<<numBlocks, threadsPerBlock>>>(d_output, cudaTypes->d_com, cudaTypes->d_comA, d_area, d_Aarea, cudaTypes->d_grid_location, numCells, step, backlog_step);
     cudaErrCheck(cudaGetLastError());
 
     if (backlog_step == BACKLOG_SIZE - 1){
@@ -680,73 +684,71 @@ WriteError Model::writeDynamics(int step) {
     backlog_step = (backlog_step + 1) % BACKLOG_SIZE;
 
     return 0;
-#endif
 
-
-#ifndef USE_DEVICE_BACKLOG
-    cudaErrCheck(cudaMemcpy(com, d_com, numCells*sizeof(Real2), cudaMemcpyDeviceToHost));
-    cudaErrCheck(cudaMemcpy(comA, d_comA, numCells*sizeof(Real2), cudaMemcpyDeviceToHost));
+#else
+    cudaErrCheck(cudaMemcpy(cudaTypes->com, cudaTypes->d_com, numCells*sizeof(Real2), cudaMemcpyDeviceToHost));
+    cudaErrCheck(cudaMemcpy(cudaTypes->comA, cudaTypes->d_comA, numCells*sizeof(Real2), cudaMemcpyDeviceToHost));
     cudaErrCheck(cudaMemcpy(area, d_area, numCells*sizeof(Real), cudaMemcpyDeviceToHost));
     cudaErrCheck(cudaMemcpy(Aarea, d_Aarea, numCells*sizeof(Real), cudaMemcpyDeviceToHost));
     cudaErrCheck(cudaDeviceSynchronize());
     for (int i=0; i < numCells; ++i)
     {
-        com[i].x /= area[i];
-        com[i].y /= area[i];
+        cudaTypes->com[i].x /= area[i];
+        cudaTypes->com[i].y /= area[i];
         if (Aarea[i] < 1e-6)
         {
-            comA[i].x = 0;
-            comA[i].y = 0;
+            cudaTypes->comA[i].x = 0;
+            cudaTypes->comA[i].y = 0;
         }
         else
         {
-            comA[i].x /= Aarea[i];
-            comA[i].y /= Aarea[i];
+            cudaTypes->comA[i].x /= Aarea[i];
+            cudaTypes->comA[i].y /= Aarea[i];
         }
 
-        if (std::isnan(com[i].x) || std::isnan(com[i].y) )
+        if (std::isnan(cudaTypes->com[i].x) || std::isnan(cudaTypes->com[i].y) )
         {
             std::cerr << "Error: COM" << i << " is NaN" << "\n";
             std::cerr << "Area: " << area[i] << "\n";
-            std::cerr << "COM: " << com[i].x << ", " << com[i].y << "\n";
+            std::cerr << "COM: " << cudaTypes->com[i].x << ", " << cudaTypes->com[i].y << "\n";
             throw std::runtime_error("COM is NaN");
         }
-        if (std::isnan(comA[i].x) || std::isnan(comA[i].y) )
+        if (std::isnan(cudaTypes->comA[i].x) || std::isnan(cudaTypes->comA[i].y) )
         {
             std::cerr << "Error: COMA is NaN" << "\n";
             std::cerr << "Area: " << Aarea[i] << "\n";
-            std::cerr << "COMA: " << comA[i].x << ", " << comA[i].y << "\n";
+            std::cerr << "COMA: " << cudaTypes->comA[i].x << ", " << cudaTypes->comA[i].y << "\n";
             throw std::runtime_error("COMA is NaN");
         }
     }
 
-    cudaErrCheck(cudaMemcpy(grid_location, d_grid_location, numCells*sizeof(int2), cudaMemcpyDeviceToHost));
+    cudaErrCheck(cudaMemcpy(cudaTypes->grid_location, cudaTypes->d_grid_location, numCells*sizeof(int2), cudaMemcpyDeviceToHost));
     Real real_i, real_step, real_x, real_y;
     for (int i=0; i < numCells; ++i)
     {
         real_i = (Real) i;
         real_step = (Real) step;
-        real_x = (Real) grid_location[i].x;
-        real_y = (Real) grid_location[i].y;
+        real_x = (Real) cudaTypes->grid_location[i].x;
+        real_y = (Real) cudaTypes->grid_location[i].y;
         dynamics_output.write(reinterpret_cast<char*>(&real_i), sizeof(Real));
         dynamics_output.write(reinterpret_cast<char*>(&real_step), sizeof(Real));
         dynamics_output.write(reinterpret_cast<char*>(&real_x), sizeof(Real));
         dynamics_output.write(reinterpret_cast<char*>(&real_y), sizeof(Real));
         dynamics_output.write(reinterpret_cast<char*>(&area[i]), sizeof(Real));
         dynamics_output.write(reinterpret_cast<char*>(&Aarea[i]), sizeof(Real));
-        dynamics_output.write(reinterpret_cast<char*>(&com[i].x), sizeof(Real));
-        dynamics_output.write(reinterpret_cast<char*>(&com[i].y), sizeof(Real));
-        dynamics_output.write(reinterpret_cast<char*>(&comA[i].x), sizeof(Real));
-        dynamics_output.write(reinterpret_cast<char*>(&comA[i].y), sizeof(Real));
+        dynamics_output.write(reinterpret_cast<char*>(&cudaTypes->com[i].x), sizeof(Real));
+        dynamics_output.write(reinterpret_cast<char*>(&cudaTypes->com[i].y), sizeof(Real));
+        dynamics_output.write(reinterpret_cast<char*>(&cudaTypes->comA[i].x), sizeof(Real));
+        dynamics_output.write(reinterpret_cast<char*>(&cudaTypes->comA[i].y), sizeof(Real));
     }
     return 0;
 #endif
 }
 
-WriteError Model::write(bool useCondensedOutput) {
+WriteError Model::writeFullOutput(bool useCondensedOutput) {
     // Write phi and A to file
     // copy the grid location to the host
-    cudaErrCheck(cudaMemcpy(grid_location, d_grid_location, numCells*sizeof(int2), cudaMemcpyDeviceToHost));
+    cudaErrCheck(cudaMemcpy(cudaTypes->grid_location, cudaTypes->d_grid_location, numCells*sizeof(int2), cudaMemcpyDeviceToHost));
     std::lock_guard<std::mutex> guard(fileMutex); // Lock the mutex
     cudaErrCheck(cudaMemcpy(phi, d_phi, numCells*p.N*p.N*sizeof(Real), cudaMemcpyDeviceToHost));
     cudaErrCheck(cudaMemcpy(A, d_A, numCells*p.N*p.N*sizeof(Real), cudaMemcpyDeviceToHost));
@@ -754,7 +756,7 @@ WriteError Model::write(bool useCondensedOutput) {
     if (useCondensedOutput) {
         WriteError earlyExit = makeCondensedOutput(phi, nullptr, phi_output);
         WriteError earlyExitA = makeCondensedOutput(A, phi, A_output);
-        makeLabelImage<<<grid, block>>>(d_phi, d_buffer, d_grid_location, d_Param);
+        makeLabelImage<<<cudaTypes->grid, cudaTypes->block>>>(d_phi, d_buffer, cudaTypes->d_grid_location, d_Param);
         cudaErrCheck(cudaMemcpy(phi, d_buffer, numCells*p.N*p.N*sizeof(Real), cudaMemcpyDeviceToHost));
         WriteError earlyExitLabel = makeCondensedOutput(phi, nullptr, label_output);
         if (earlyExit || earlyExitA || earlyExitLabel)
@@ -778,7 +780,7 @@ WriteError Model::write(bool useCondensedOutput) {
 
 // Function to run the file writing operation in a background thread
 void Model::writeInBackground( bool useCondensedOutput) {
-    std::thread backgroundThread(&Model::write, this, useCondensedOutput);
+    std::thread backgroundThread(&Model::writeFullOutput, this, useCondensedOutput);
     backgroundThread.detach(); // Detach the thread to run in the background
     
 }

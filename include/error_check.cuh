@@ -23,7 +23,6 @@ SOFTWARE
 #ifndef ERROR_CHECK_CUH
 #define ERROR_CHECK_CUH
 
-#include "model.cuh"
 #include <iostream>
 #include <cublas_v2.h>
 #include <curand_kernel.h>
