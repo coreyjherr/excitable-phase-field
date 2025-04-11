@@ -95,13 +95,29 @@ struct Model::CudaTypes {
     dim3 grid, block, Cblocks, Cthreads_per_block;
 };
 
-Model::Model(Param param, int deviceID, std::string basePath, unsigned long long seed, std::string simulationID, bool writeFullOutput) {
+Model::Model(Param param, int deviceID, std::string basePath, unsigned long long seed, std::string simulationID, int outputType) {
     cudaTypes = new CudaTypes;
 
     p = param;
     p.S0 = M_PI*p.r0*p.r0;
     numCells = p.numCells;
-    writeFullOutput_ = writeFullOutput;
+    if (outputType == WRITE_FULL_OUTPUT || outputType == WRITE_CONDENSED_OUTPUT) {
+        writeFullOutput_ = true;
+    } else {
+        writeFullOutput_ = false;
+    }
+
+    if (outputType == WRITE_CONDENSED_OUTPUT) {
+        writeCondensedOutput_ = true;
+    } else {
+        writeCondensedOutput_ = false;
+    }
+
+    if (outputType == WRITE_FULL_OUTPUT || outputType == WRITE_CONDENSED_OUTPUT || outputType == WRITE_DYNAMICS_OUTPUT) {
+        writeDynamicsOutput_ = true;
+    } else {
+        writeDynamicsOutput_ = false;
+    }
 
     deviceID_ = deviceID;
     cudaErrCheck(cudaSetDevice(deviceID_));
@@ -172,10 +188,26 @@ Model::Model(Param param, int deviceID, std::string basePath, unsigned long long
 #endif
     cudaMalloc((void**)&d_tmp_com, numCells*sizeof(Real));
 
+    // Get the current time and date
+    std::string time_str = simulationID;
+    if (time_str == "")
+    {
+        std::ostringstream oss;
+        auto t = std::time(nullptr);
+        auto tm = *std::localtime(&t);
+        oss << std::put_time(&tm, "%Y%m%d_%H%M%S");
+        time_str = oss.str();
+    }
+    time_str += "_" + std::to_string(deviceID_);
+
     if (writeFullOutput_) {
-        initializeOutput(basePath, simulationID);
-    } else {
-        initializeDynamicsOutput(basePath, simulationID);
+        initializeOutput(basePath, time_str);
+    } 
+    if (writeDynamicsOutput_) {
+        initializeDynamicsOutput(basePath, time_str);
+    }
+    if (outputType != WRITE_NONE) {
+        writeParamToTOML(p, basePath + "param_" + time_str + ".toml", rngSeed);
     }
 
     threadsNumCells = std::min(numCells, 1024);
@@ -289,19 +321,7 @@ void Model::initializeCellGrid(Real populationRadius) {
     }
 }
 
-void Model::initializeOutput(std::string basePath, std::string simulationID) {
-    using std::string;
-    // Get the current time and date
-    string time_str = simulationID;
-    if (time_str == "")
-    {
-        std::ostringstream oss;
-        auto t = std::time(nullptr);
-        auto tm = *std::localtime(&t);
-        oss << std::put_time(&tm, "%Y%m%d_%H%M%S");
-        time_str = oss.str();
-    }
-    time_str += "_" + std::to_string(deviceID_);
+void Model::initializeOutput(std::string basePath, std::string time_str) {
 
     A_output.open(basePath + "A_" + time_str + ".dat", std::ios::binary);
     phi_output.open(basePath + "phi_" + time_str + ".dat", std::ios::binary);
@@ -310,23 +330,9 @@ void Model::initializeOutput(std::string basePath, std::string simulationID) {
     C_output.open(basePath + "C_" + time_str + ".dat", std::ios::binary);
 #endif
     
-    initializeDynamicsOutput(basePath, simulationID);
 }
 
-void Model::initializeDynamicsOutput(std::string basePath, std::string simulationID) {
-    using std::string;
-    // Get the current time and date
-    string time_str = simulationID;
-    if (time_str == "")
-    {
-        std::ostringstream oss;
-        auto t = std::time(nullptr);
-        auto tm = *std::localtime(&t);
-        oss << std::put_time(&tm, "%Y%m%d_%H%M%S");
-        time_str = oss.str();
-    }
-    time_str += "_" + std::to_string(deviceID_);
-    writeParamToTOML(p, basePath + "param_" + time_str + ".toml", rngSeed);
+void Model::initializeDynamicsOutput(std::string basePath, std::string time_str) {
 
     dynamics_output.open(basePath + "dynamics_" + time_str + ".dat", std::ios::binary);
     // dynamics_output << "t,cell,grid_offset_x,grid_offset_y,phi_area,A_area,com_x,com_y,comA_x,comA_y" << "\n";
@@ -342,7 +348,7 @@ void Model::simulate(bool progressBar, bool useCondensedOutput) {
     BlockProgressBar bar{
         option::BarWidth{80}, option::ForegroundColor{Color::white},
         option::FontStyles{std::vector<FontStyle>{FontStyle::bold}},
-        option::MaxProgress{p.T}, option::ShowElapsedTime{true},option::ShowRemainingTime{true}};
+        option::MaxProgress{p.T/100}, option::ShowElapsedTime{true},option::ShowRemainingTime{true}};
 
     BlockProgressBar startup_bar{
         option::BarWidth{80}, option::ForegroundColor{Color::white},
@@ -372,16 +378,21 @@ void Model::simulate(bool progressBar, bool useCondensedOutput) {
 
         if (t % 100 == 0) {
             updateGridLocation();
+            if (progressBar) {
+                bar.tick();
+            }
         }
 
         if (t % p.blind == 0){
             updateCOM();
-            writeDynamics(t);
+            if (writeDynamicsOutput_) {
+                writeDynamics(t);
+            }
         }
 
         // Hardcode the full output to every 400 steps
         if (t % 400 == 0 && writeFullOutput_) {
-            earlyExit = writeFullOutput(useCondensedOutput);
+            earlyExit = writeFullOutput();
         }
 
         updateCollisionForce();
@@ -392,9 +403,6 @@ void Model::simulate(bool progressBar, bool useCondensedOutput) {
         updateA();
         updateR();
 
-        if (progressBar) {
-            bar.tick();
-        }
     }
 }
 
@@ -745,7 +753,7 @@ WriteError Model::writeDynamics(int step) {
 #endif
 }
 
-WriteError Model::writeFullOutput(bool useCondensedOutput) {
+WriteError Model::writeFullOutput() {
     // Write phi and A to file
     // copy the grid location to the host
     cudaErrCheck(cudaMemcpy(cudaTypes->grid_location, cudaTypes->d_grid_location, numCells*sizeof(int2), cudaMemcpyDeviceToHost));
@@ -753,7 +761,7 @@ WriteError Model::writeFullOutput(bool useCondensedOutput) {
     cudaErrCheck(cudaMemcpy(phi, d_phi, numCells*p.N*p.N*sizeof(Real), cudaMemcpyDeviceToHost));
     cudaErrCheck(cudaMemcpy(A, d_A, numCells*p.N*p.N*sizeof(Real), cudaMemcpyDeviceToHost));
 
-    if (useCondensedOutput) {
+    if (writeCondensedOutput_) {
         WriteError earlyExit = makeCondensedOutput(phi, nullptr, phi_output);
         WriteError earlyExitA = makeCondensedOutput(A, phi, A_output);
         makeLabelImage<<<cudaTypes->grid, cudaTypes->block>>>(d_phi, d_buffer, cudaTypes->d_grid_location, d_Param);
@@ -780,8 +788,52 @@ WriteError Model::writeFullOutput(bool useCondensedOutput) {
 
 // Function to run the file writing operation in a background thread
 void Model::writeInBackground( bool useCondensedOutput) {
-    std::thread backgroundThread(&Model::writeFullOutput, this, useCondensedOutput);
+    std::thread backgroundThread(&Model::writeFullOutput, this);
     backgroundThread.detach(); // Detach the thread to run in the background
-    
 }
 
+std::vector<Real> Model::getCOMX() {
+    std::vector<Real> comX(numCells);
+    cudaErrCheck(cudaMemcpy(comX.data(), cudaTypes->d_com, numCells*sizeof(Real2), cudaMemcpyDeviceToHost));
+    for (int i=0; i < numCells; ++i)
+    {
+        comX[i] = cudaTypes->com[i].x;
+    }
+    return comX;
+}
+
+std::vector<Real> Model::getCOMY() {
+    std::vector<Real> comY(numCells);
+    cudaErrCheck(cudaMemcpy(comY.data(), cudaTypes->d_com, numCells*sizeof(Real2), cudaMemcpyDeviceToHost));
+    for (int i=0; i < numCells; ++i)
+    {
+        comY[i] = cudaTypes->com[i].y;
+    }
+    return comY;
+}
+
+std::vector<Real> Model::getCOMAX() {
+    std::vector<Real> comAX(numCells);
+    cudaErrCheck(cudaMemcpy(comAX.data(), cudaTypes->d_comA, numCells*sizeof(Real2), cudaMemcpyDeviceToHost));
+    for (int i=0; i < numCells; ++i)
+    {
+        comAX[i] = cudaTypes->comA[i].x;
+    }
+    return comAX;
+}
+
+std::vector<Real> Model::getCOMAY() {
+    std::vector<Real> comAY(numCells);
+    cudaErrCheck(cudaMemcpy(comAY.data(), cudaTypes->d_comA, numCells*sizeof(Real2), cudaMemcpyDeviceToHost));
+    for (int i=0; i < numCells; ++i)
+    {
+        comAY[i] = cudaTypes->comA[i].y;
+    }
+    return comAY;
+}
+
+std::vector<Real> Model::getArea() {
+    std::vector<Real> areaVec(numCells);
+    cudaErrCheck(cudaMemcpy(areaVec.data(), d_area, numCells*sizeof(Real), cudaMemcpyDeviceToHost));
+    return areaVec;
+}

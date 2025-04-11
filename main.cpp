@@ -39,7 +39,7 @@ int main(int argc, char const *argv[]) {
     }
     std::string configFilePath = argv[1];
     std::string basePath = "./results/";
-    bool writeFullOutput = false;
+    int writeFullOutput = 1;
     if (argc >= 3)
     {
         basePath = argv[2];
@@ -49,19 +49,16 @@ int main(int argc, char const *argv[]) {
     if (argc >= 4) 
     {
         std::string fullOutputArg = argv[3];
-        if (fullOutputArg == "1" || fullOutputArg == "true" || fullOutputArg == "True" || fullOutputArg == "TRUE")
-        {
-            writeFullOutput = true; // set to true if you want full output for each simulation
-        }
-        else if (fullOutputArg == "0" || fullOutputArg == "false" || fullOutputArg == "False" || fullOutputArg == "FALSE")
-        {
-            writeFullOutput = false;
-        }
+        if (std::stoi(fullOutputArg) == WRITE_FULL_OUTPUT)
+            writeFullOutput = WRITE_FULL_OUTPUT;
+        else if (std::stoi(fullOutputArg) == WRITE_CONDENSED_OUTPUT)
+            writeFullOutput = WRITE_CONDENSED_OUTPUT;
+        else if (std::stoi(fullOutputArg) == WRITE_DYNAMICS_OUTPUT)
+            writeFullOutput = WRITE_DYNAMICS_OUTPUT;
+        else if (std::stoi(fullOutputArg) == WRITE_PARAMETERS_OUTPUT)
+            writeFullOutput = WRITE_PARAMETERS_OUTPUT;
         else
-        {
-            std::cerr << "Invalid argument for full output. Defaulting to false." << std::endl;
-            writeFullOutput = false;
-        }
+            writeFullOutput = WRITE_NONE;
     }
     
     std::cout << basePath << std::endl;
@@ -116,7 +113,7 @@ int main(int argc, char const *argv[]) {
                 Model model(param, thread_index, basePath, seed, simulationID, writeFullOutput);
                 bool progressBar = thread_index==0;
                 try {
-                    model.simulate(progressBar, useCondensed);
+                    model.simulate(progressBar);
                 } catch (const std::runtime_error& e) {
                     std::cerr << "Caught exception: " << e.what() << std::endl;
                 }

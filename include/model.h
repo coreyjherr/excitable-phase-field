@@ -28,6 +28,12 @@ SOFTWARE
 #include <mutex>
 #include <vector>
 
+#define WRITE_FULL_OUTPUT 0
+#define WRITE_CONDENSED_OUTPUT 1
+#define WRITE_DYNAMICS_OUTPUT 2
+#define WRITE_PARAMETERS_OUTPUT 3
+#define WRITE_NONE 4
+
 typedef int WriteError ;
 
 class Model {
@@ -64,15 +70,17 @@ private:
     void rollAllFieldsX();
     void rollAllFieldsY();
     void initializeCellGrid(Real totalArea);
-    void initializeOutput(std::string basePath, std::string simulationID);
-    void initializeDynamicsOutput(std::string basePath, std::string simulationID);
+    void initializeOutput(std::string basePath, std::string time_str);
+    void initializeDynamicsOutput(std::string basePath, std::string time_str);
     void copyToBacklog(int step, int backlog_index); 
     bool writeFullOutput_;
+    bool writeCondensedOutput_;
+    bool writeDynamicsOutput_;
 
 public:
     unsigned long long rngSeed;
     Real *d_phi;
-    Model(Param p, int deviceID = 0, std::string basePath = "./results/", unsigned long long seed=0, std::string simulationID="", bool writeOutput=true);
+    Model(Param p, int deviceID = 0, std::string basePath = "./results/", unsigned long long seed=0, std::string simulationID="", int outputType=WRITE_CONDENSED_OUTPUT);
     ~Model();
     void simulate(bool progressBar = true, bool useCondensedOutput = false);
     void updatePhi(int t);
@@ -86,7 +94,10 @@ public:
     void updateBoundingBox();
     std::vector<Real> getCOMX();
     std::vector<Real> getCOMY();
-    WriteError writeFullOutput(bool useCondensedOutput=false);
+    std::vector<Real> getCOMAX();
+    std::vector<Real> getCOMAY();
+    std::vector<Real> getArea();
+    WriteError writeFullOutput();
     WriteError writeDynamics(int step);
     void writeInBackground(bool useCondensedOutput=false);
     void updateCOM();

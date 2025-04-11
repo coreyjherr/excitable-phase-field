@@ -38,14 +38,19 @@ target_compile_options(run_phase_field PUBLIC -O3)
 
 # set compiler options for using various features of the code
 option(CHEMO "Use chemotaxis" OFF)
-option(USE_BACKLOG "Use gpu backlog for outputs" OFF)
+option(USE_BACKLOG "Use gpu backlog for outputs" ON)
 
 if(CHEMO)
     target_compile_definitions(stochastic_phase_field PRIVATE USE_CHEMO)
 endif()
 
 if(USE_BACKLOG)
+    # print USE_BACKLOG to the console
+    message(STATUS "Using backlog for outputs")
     target_compile_definitions(stochastic_phase_field PRIVATE USE_DEVICE_BACKLOG)
+else()
+    # print USE_BACKLOG to the console
+    message(STATUS "Not using backlog for outputs")
 endif()
 
 option(BUILD_TESTS "Build tests" OFF)
