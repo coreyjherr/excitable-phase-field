@@ -1,9 +1,9 @@
 #include "include/params.hpp"
+
 #include "include/toml.hpp"
 
-std::vector<std::vector<Real>>
-loadParamsFromTOML(const std::string& filepath, const Param& defaults)
-{
+std::vector<std::vector<Real>> loadParamsFromTOML(const std::string& filepath,
+                                                  const Param& defaults) {
   std::vector<std::vector<Real>> params;
 
   try {
@@ -80,7 +80,6 @@ loadParamsFromTOML(const std::string& filepath, const Param& defaults)
     params.push_back(readArray("Nchem", defaults.Nchem));
     params.push_back(readArray("chem_force", defaults.chem_force));
     params.push_back(readArray("delta_r", defaults.delta_r));
-
   } catch (const toml::parse_error& err) {
     std::cerr << "Error parsing TOML file: " << err.what() << std::endl;
   }
@@ -88,9 +87,7 @@ loadParamsFromTOML(const std::string& filepath, const Param& defaults)
   return params;
 }
 
-Param
-mapCombinationToParam(const std::vector<Real>& combination)
-{
+Param mapCombinationToParam(const std::vector<Real>& combination) {
   Param params;
 
   // Ensure the combination has the correct number of elements
@@ -144,57 +141,54 @@ mapCombinationToParam(const std::vector<Real>& combination)
   return params;
 }
 
-bool
-writeParamToTOML(const Param& params,
-                 const std::string& filepath,
-                 unsigned long long seed)
-{
+bool writeParamToTOML(const Param& params,
+                      const std::string& filepath,
+                      unsigned long long seed) {
   try {
     // Create a toml::table and populate it with the Param values using an
     // initializer list
     auto tbl = toml::table{
-      { "N",
-        static_cast<int64_t>(params.N) }, // Cast to int64_t for TOML integer
-      { "T", static_cast<int64_t>(params.T) },
-      { "blind", static_cast<int64_t>(params.blind) },
-      { "dt", params.dt }, // No cast needed for floating-point values
-      { "dx", params.dx },
+        {"N",
+         static_cast<int64_t>(params.N)},  // Cast to int64_t for TOML integer
+        {"T", static_cast<int64_t>(params.T)},
+        {"blind", static_cast<int64_t>(params.blind)},
+        {"dt", params.dt},  // No cast needed for floating-point values
+        {"dx", params.dx},
 
-      { "gamma", params.gamma },
-      { "eps2", params.eps2 },
-      { "B_s", params.B_s },
-      { "xi", params.xi },
-      { "alpha", params.alpha },
-      { "k_a", params.k_a },
-      { "K", params.K },
-      { "b", params.b },
-      { "A_t", params.A_t },
-      { "d1", params.d1 },
-      { "d2", params.d2 },
-      { "c1", params.c1 },
-      { "c2", params.c2 },
-      { "tau", params.tau },
-      { "D_A", params.D_A },
-      { "D_R", params.D_R },
-      { "sigma", params.sigma },
-      { "A0", params.A0 },
-      { "S0", params.S0 },
-      { "r0", params.r0 },
-      { "m_repulsion", params.m_repulsion },
-      { "numCells", static_cast<int64_t>(params.numCells) },
+        {"gamma", params.gamma},
+        {"eps2", params.eps2},
+        {"B_s", params.B_s},
+        {"xi", params.xi},
+        {"alpha", params.alpha},
+        {"k_a", params.k_a},
+        {"K", params.K},
+        {"b", params.b},
+        {"A_t", params.A_t},
+        {"d1", params.d1},
+        {"d2", params.d2},
+        {"c1", params.c1},
+        {"c2", params.c2},
+        {"tau", params.tau},
+        {"D_A", params.D_A},
+        {"D_R", params.D_R},
+        {"sigma", params.sigma},
+        {"A0", params.A0},
+        {"S0", params.S0},
+        {"r0", params.r0},
+        {"m_repulsion", params.m_repulsion},
+        {"numCells", static_cast<int64_t>(params.numCells)},
 
-      { "R_wall", params.R_wall },
-      { "m_adhesion", params.m_adhesion },
-      { "m_wall_repulsion", params.m_wall_repulsion },
-      { "packing_fraction", params.packing_fraction },
-      { "chem_strength", params.chem_strength },
-      { "chem_decay", params.chem_decay },
-      { "Dchem", params.Dchem },
-      { "Nchem", static_cast<int64_t>(params.Nchem) },
-      { "chem_force", params.chem_force },
-      { "delta_r", params.delta_r },
-      { "seed", static_cast<int64_t>(seed) }
-    };
+        {"R_wall", params.R_wall},
+        {"m_adhesion", params.m_adhesion},
+        {"m_wall_repulsion", params.m_wall_repulsion},
+        {"packing_fraction", params.packing_fraction},
+        {"chem_strength", params.chem_strength},
+        {"chem_decay", params.chem_decay},
+        {"Dchem", params.Dchem},
+        {"Nchem", static_cast<int64_t>(params.Nchem)},
+        {"chem_force", params.chem_force},
+        {"delta_r", params.delta_r},
+        {"seed", static_cast<int64_t>(seed)}};
 
     // Write the table to a TOML file
     std::ofstream ofs(filepath);
@@ -212,9 +206,7 @@ writeParamToTOML(const Param& params,
   }
 }
 
-void
-printParam(const Param& param)
-{
+void printParam(const Param& param) {
   std::cout << "N " << param.N << std::endl;
   std::cout << "T " << param.T << std::endl;
   std::cout << "blind " << param.blind << std::endl;

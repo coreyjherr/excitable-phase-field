@@ -37,9 +37,8 @@ SOFTWARE
 
 typedef int WriteError;
 
-class Model
-{
-private:
+class Model {
+ private:
   struct CudaTypes;
   CudaTypes* cudaTypes;
 
@@ -53,7 +52,7 @@ private:
 
   Real *phi, *A, *R, *C, *area, *Aarea;
   Real *d_A, *d_R, *d_C, *d_area, *d_Aarea, *d_collision_force, *d_buffer,
-    *d_phi_t, *d_Cbuffer;
+      *d_phi_t, *d_Cbuffer;
 
   Param p;
   Param* d_Param;
@@ -80,7 +79,7 @@ private:
   bool writeCondensedOutput_;
   bool writeDynamicsOutput_;
 
-public:
+ public:
   unsigned long long rngSeed;
   Real* d_phi;
   Model(Param p,
@@ -115,4 +114,4 @@ public:
   std::string simulationID;
 };
 
-#endif // MODEL_H
+#endif  // MODEL_H

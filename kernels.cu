@@ -26,9 +26,7 @@ SOFTWARE
 #include "include/kernels.cuh"
 #include "include/params.hpp"
 
-__global__ void
-initializePhiKernel(Real* phi, Param* p)
-{
+__global__ void initializePhiKernel(Real* phi, Param* p) {
   int i = blockIdx.x * blockDim.x + threadIdx.x;
   int j = blockIdx.y * blockDim.y + threadIdx.y;
   int k = blockIdx.z * blockDim.z + threadIdx.z;
@@ -39,13 +37,11 @@ initializePhiKernel(Real* phi, Param* p)
     Real x = (i - (Real)N / 2) * p[k].dx;
     Real y = (j - (Real)N / 2) * p[k].dx;
     phi[idx] =
-      0.5 * (1 - tanh(3 * (sqrt(x * x + y * y) - p[k].r0) / sqrt(p[k].eps2)));
+        0.5 * (1 - tanh(3 * (sqrt(x * x + y * y) - p[k].r0) / sqrt(p[k].eps2)));
   }
 }
 
-__global__ void
-updateBoundingIndex(int2* grid_cublas_index, Param* p)
-{
+__global__ void updateBoundingIndex(int2* grid_cublas_index, Param* p) {
   int i = blockIdx.x * blockDim.x + threadIdx.x;
 
   if (i < p[0].numCells) {
@@ -56,9 +52,10 @@ updateBoundingIndex(int2* grid_cublas_index, Param* p)
   }
 }
 
-__global__ void
-getXIndexMaskedKernel(Real* phi, Real* buffer, Param* p, Real cutoff)
-{
+__global__ void getXIndexMaskedKernel(Real* phi,
+                                      Real* buffer,
+                                      Param* p,
+                                      Real cutoff) {
   int i = blockIdx.x * blockDim.x + threadIdx.x;
   int j = blockIdx.y * blockDim.y + threadIdx.y;
   int k = blockIdx.z * blockDim.z + threadIdx.z;
@@ -73,9 +70,10 @@ getXIndexMaskedKernel(Real* phi, Real* buffer, Param* p, Real cutoff)
   }
 }
 
-__global__ void
-getYIndexMaskedKernel(Real* phi, Real* buffer, Param* p, Real cutoff)
-{
+__global__ void getYIndexMaskedKernel(Real* phi,
+                                      Real* buffer,
+                                      Param* p,
+                                      Real cutoff) {
   int i = blockIdx.x * blockDim.x + threadIdx.x;
   int j = blockIdx.y * blockDim.y + threadIdx.y;
   int k = blockIdx.z * blockDim.z + threadIdx.z;
@@ -90,9 +88,10 @@ getYIndexMaskedKernel(Real* phi, Real* buffer, Param* p, Real cutoff)
   }
 }
 
-__global__ void
-rollGridXKernel(Real* phi, Real* buffer, int2* d_grid, Param* p)
-{
+__global__ void rollGridXKernel(Real* phi,
+                                Real* buffer,
+                                int2* d_grid,
+                                Param* p) {
   int i = blockIdx.x * blockDim.x + threadIdx.x;
   int j = blockIdx.y * blockDim.y + threadIdx.y;
   int k = blockIdx.z * blockDim.z + threadIdx.z;
@@ -116,9 +115,10 @@ rollGridXKernel(Real* phi, Real* buffer, int2* d_grid, Param* p)
   }
 }
 
-__global__ void
-rollGridYKernel(Real* phi, Real* buffer, int2* d_grid, Param* p)
-{
+__global__ void rollGridYKernel(Real* phi,
+                                Real* buffer,
+                                int2* d_grid,
+                                Param* p) {
   int i = blockIdx.x * blockDim.x + threadIdx.x;
   int j = blockIdx.y * blockDim.y + threadIdx.y;
   int k = blockIdx.z * blockDim.z + threadIdx.z;
@@ -141,9 +141,9 @@ rollGridYKernel(Real* phi, Real* buffer, int2* d_grid, Param* p)
   }
 }
 
-__global__ void
-updateGridLocationKernel(int2* d_grid_minmax, int2* d_grid_location, Param* p)
-{
+__global__ void updateGridLocationKernel(int2* d_grid_minmax,
+                                         int2* d_grid_location,
+                                         Param* p) {
   int k = blockIdx.x * blockDim.x + threadIdx.x;
   if (k < p[k].numCells) {
     int2 minmax = d_grid_minmax[k];
@@ -167,8 +167,7 @@ updateGridLocationKernel(int2* d_grid_minmax, int2* d_grid_location, Param* p)
 }
 
 __device__ __forceinline__ Real
-laplacian(Real* phi, int i, int j, int k, Param* p)
-{
+laplacian(Real* phi, int i, int j, int k, Param* p) {
   int N = p[k].N;
 
   int i1 = (i + 1) % N;
@@ -182,9 +181,7 @@ laplacian(Real* phi, int i, int j, int k, Param* p)
          (p[k].dx * p[k].dx);
 }
 
-__device__ __forceinline__ Real
-laplacianChem(Real* C, int i, int j, Param* p)
-{
+__device__ __forceinline__ Real laplacianChem(Real* C, int i, int j, Param* p) {
   int N = p[0].Nchem;
 
   // non-periodic boundary conditions, let the boundary be zero
@@ -198,8 +195,7 @@ laplacianChem(Real* C, int i, int j, Param* p)
 }
 
 __device__ __forceinline__ Real
-derivativeX(Real* phi, int i, int j, int k, Param* p)
-{
+derivativeX(Real* phi, int i, int j, int k, Param* p) {
   int N = p[k].N;
   int i1 = (i + 1) % N;
   int i2 = (i - 1 + N) % N;
@@ -209,8 +205,7 @@ derivativeX(Real* phi, int i, int j, int k, Param* p)
 }
 
 __device__ __forceinline__ Real
-derivativeY(Real* phi, int i, int j, int k, Param* p)
-{
+derivativeY(Real* phi, int i, int j, int k, Param* p) {
   int N = p[k].N;
   int j1 = (j + 1) % N;
   int j2 = (j - 1 + N) % N;
@@ -219,9 +214,10 @@ derivativeY(Real* phi, int i, int j, int k, Param* p)
          (2 * p[k].dx);
 }
 
-__device__ __forceinline__ Real
-derivativeXChem(Real* C, int i, int j, Param* p)
-{
+__device__ __forceinline__ Real derivativeXChem(Real* C,
+                                                int i,
+                                                int j,
+                                                Param* p) {
   int N = p[0].Nchem;
   Real Cij1 = i + 1 < N ? C[j * N + i + 1] : 0;
   Real Cij2 = i - 1 >= 0 ? C[j * N + i - 1] : 0;
@@ -229,9 +225,10 @@ derivativeXChem(Real* C, int i, int j, Param* p)
   return (Cij1 - Cij2) / (2 * p[0].dx);
 }
 
-__device__ __forceinline__ Real
-derivativeYChem(Real* C, int i, int j, Param* p)
-{
+__device__ __forceinline__ Real derivativeYChem(Real* C,
+                                                int i,
+                                                int j,
+                                                Param* p) {
   int N = p[0].Nchem;
   Real Cj1i = j + 1 < N ? C[(j + 1) * N + i] : 0;
   Real Cj2i = j - 1 >= 0 ? C[(j - 1) * N + i] : 0;
@@ -239,17 +236,15 @@ derivativeYChem(Real* C, int i, int j, Param* p)
   return (Cj1i - Cj2i) / (2 * p[0].dx);
 }
 
-__global__ void
-updatePhiKernel(Real* phi,
-                Real* A,
-                Real* R,
-                Param* p,
-                Real* area,
-                int2* grid_location,
-                Real* collision_force,
-                Real* phi_t,
-                int t)
-{
+__global__ void updatePhiKernel(Real* phi,
+                                Real* A,
+                                Real* R,
+                                Param* p,
+                                Real* area,
+                                int2* grid_location,
+                                Real* collision_force,
+                                Real* phi_t,
+                                int t) {
   int i = blockIdx.x * blockDim.x + threadIdx.x;
   int j = blockIdx.y * blockDim.y + threadIdx.y;
   int k = blockIdx.z * blockDim.z + threadIdx.z;
@@ -269,41 +264,39 @@ updatePhiKernel(Real* phi,
     Real phi_x = derivativeX(phi, i, j, k, p);
     Real phi_y = derivativeY(phi, i, j, k, p);
 
-    const int2 thread_loc = { grid_location[k].x + i - N / 2,
-                              grid_location[k].y + j - N / 2 };
+    const int2 thread_loc = {grid_location[k].x + i - N / 2,
+                             grid_location[k].y + j - N / 2};
     Real wall_force = 0;
     const Real thread_R2 =
-      (thread_loc.x * thread_loc.x + thread_loc.y * thread_loc.y) * p[k].dx *
-      p[k].dx;
+        (thread_loc.x * thread_loc.x + thread_loc.y * thread_loc.y) * p[k].dx *
+        p[k].dx;
     if (thread_R2 > .8 * p[k].R_wall * p[k].R_wall) {
       // wall_force = p[k].m_wall_repulsion*phi_;
       wall_force =
-        0.5 *
-        (1 + tanh(3 * (sqrt(thread_R2) - p[k].R_wall) / sqrt(p[k].eps2))) *
-        p[k].m_wall_repulsion * phi_;
+          0.5 *
+          (1 + tanh(3 * (sqrt(thread_R2) - p[k].R_wall) / sqrt(p[k].eps2))) *
+          p[k].m_wall_repulsion * phi_;
     }
 
     dphi += sqrt(phi_x * phi_x + phi_y * phi_y) *
-              (-p[k].B_s * (area[k] * p[k].dx * p[k].dx - p[k].S0) +
-               p[k].alpha * A[idx] * phi_) -
+                (-p[k].B_s * (area[k] * p[k].dx * p[k].dx - p[k].S0) +
+                 p[k].alpha * A[idx] * phi_) -
             collision_force[idx] - wall_force;
 
     phi_t[idx] = dphi / p[k].xi;
   }
 }
 
-__global__ void
-updatePhiKernelChemo(Real* phi,
-                     Real* A,
-                     Real* R,
-                     Real* C,
-                     Param* p,
-                     Real* area,
-                     int2* grid_location,
-                     Real* collision_force,
-                     Real* buffer,
-                     int t)
-{
+__global__ void updatePhiKernelChemo(Real* phi,
+                                     Real* A,
+                                     Real* R,
+                                     Real* C,
+                                     Param* p,
+                                     Real* area,
+                                     int2* grid_location,
+                                     Real* collision_force,
+                                     Real* buffer,
+                                     int t) {
   int i = blockIdx.x * blockDim.x + threadIdx.x;
   int j = blockIdx.y * blockDim.y + threadIdx.y;
   int k = blockIdx.z * blockDim.z + threadIdx.z;
@@ -323,8 +316,8 @@ updatePhiKernelChemo(Real* phi,
     Real phi_x = derivativeX(phi, i, j, k, p);
     Real phi_y = derivativeY(phi, i, j, k, p);
 
-    const int2 thread_loc = { grid_location[k].x + i - N / 2,
-                              grid_location[k].y + j - N / 2 };
+    const int2 thread_loc = {grid_location[k].x + i - N / 2,
+                             grid_location[k].y + j - N / 2};
     int R_ind = p[0].Nchem / 2;
     Real wall_force = 0;
     if (thread_loc.x * thread_loc.x + thread_loc.y * thread_loc.y >
@@ -337,24 +330,22 @@ updatePhiKernelChemo(Real* phi,
              p[k].alpha * A[idx] * phi_ - collision_force[idx] - wall_force);
 
     buffer[idx] = dphi / p[k].xi;
-    const int2 C_loc = { grid_location[k].x + R_ind + i,
-                         grid_location[k].y + R_ind + j };
+    const int2 C_loc = {grid_location[k].x + R_ind + i,
+                        grid_location[k].y + R_ind + j};
     if (phi_ > 0.5)
       // C[C_loc.y*p[0].Nchem * C_loc.x] += p[k].dt*p[k].chem_strength*phi_;
       C[C_loc.y * p[0].Nchem + C_loc.x] += p[k].dt * p[k].chem_strength * phi_;
   }
 }
 
-__global__ void
-updateAKernel(Real* phi,
-              Real* A,
-              Real* R,
-              Param* p,
-              Real* phi_t,
-              int2* grid_location,
-              curandState* state,
-              Real* buffer)
-{
+__global__ void updateAKernel(Real* phi,
+                              Real* A,
+                              Real* R,
+                              Param* p,
+                              Real* phi_t,
+                              int2* grid_location,
+                              curandState* state,
+                              Real* buffer) {
   int i = blockIdx.x * blockDim.x + threadIdx.x;
   int j = blockIdx.y * blockDim.y + threadIdx.y;
   int k = blockIdx.z * blockDim.z + threadIdx.z;
@@ -378,9 +369,9 @@ updateAKernel(Real* phi,
       dA += p[k].D_A * laplacian(A, i, j, k, p);
       dA += p[k].D_A * (phi_x * A_x + phi_y * A_y) / phi_;
 
-      dA += (p[k].A_t - A_) *
-              (p[k].k_a * ridge_factor * A_ * A_ / (p[k].K * p[k].K + A_ * A_) +
-               p[k].b) -
+      dA += (p[k].A_t - A_) * (p[k].k_a * ridge_factor * A_ * A_ /
+                                   (p[k].K * p[k].K + A_ * A_) +
+                               p[k].b) -
             (p[k].d1 + p[k].d2 * R[idx]) * A_;
       dA -= A_ * phi_t[idx] / phi_;
 
@@ -397,16 +388,14 @@ updateAKernel(Real* phi,
   }
 }
 
-__global__ void
-updateRKernel(Real* phi,
-              Real* A,
-              Real* R,
-              Param* p,
-              Real* phi_t,
-              int2* grid_location,
-              curandState* state,
-              Real* buffer)
-{
+__global__ void updateRKernel(Real* phi,
+                              Real* A,
+                              Real* R,
+                              Param* p,
+                              Real* phi_t,
+                              int2* grid_location,
+                              curandState* state,
+                              Real* buffer) {
   int i = blockIdx.x * blockDim.x + threadIdx.x;
   int j = blockIdx.y * blockDim.y + threadIdx.y;
   int k = blockIdx.z * blockDim.z + threadIdx.z;
@@ -447,24 +436,21 @@ updateRKernel(Real* phi,
 
       dR += noise;
       buffer[idx] = dR;
-
     } else {
       buffer[idx] = -R_ / p[k].dt;
     }
   }
 }
 
-__global__ void
-updateRKernelChemo(Real* phi,
-                   Real* A,
-                   Real* R,
-                   Real* C,
-                   Param* p,
-                   Real* phi_t,
-                   int2* grid_location,
-                   curandState* state,
-                   Real* buffer)
-{
+__global__ void updateRKernelChemo(Real* phi,
+                                   Real* A,
+                                   Real* R,
+                                   Real* C,
+                                   Param* p,
+                                   Real* phi_t,
+                                   int2* grid_location,
+                                   curandState* state,
+                                   Real* buffer) {
   int i = blockIdx.x * blockDim.x + threadIdx.x;
   int j = blockIdx.y * blockDim.y + threadIdx.y;
   int k = blockIdx.z * blockDim.z + threadIdx.z;
@@ -484,8 +470,8 @@ updateRKernelChemo(Real* phi,
       Real R_y = derivativeY(R, i, j, k, p);
 
       int R_ind = p[0].Nchem / 2;
-      int2 C_loc = { grid_location[k].x + i + R_ind,
-                     grid_location[k].y + j + R_ind };
+      int2 C_loc = {grid_location[k].x + i + R_ind,
+                    grid_location[k].y + j + R_ind};
 
       Real C_x = derivativeXChem(C, C_loc.x, C_loc.y, p);
       Real C_y = derivativeYChem(C, C_loc.x, C_loc.y, p);
@@ -495,7 +481,7 @@ updateRKernelChemo(Real* phi,
       dR += p[k].D_R * (phi_x * R_x + phi_y * R_y) / phi_;
 
       dR += (p[k].c2 * exp(-p[0].chem_force * sqrt(C_x * C_x + C_y * C_y)) *
-               A[idx] -
+                 A[idx] -
              p[k].c1 * R_) /
             p[k].tau;
       dR -= R_ * phi_t[idx] / phi_;
@@ -506,16 +492,13 @@ updateRKernelChemo(Real* phi,
 
       dR += noise;
       buffer[idx] = dR;
-
     } else {
       buffer[idx] = -R_ / p[k].dt;
     }
   }
 }
 
-__global__ void
-updateCKernel(Real* C, Real* Cbuffer, Param* p)
-{
+__global__ void updateCKernel(Real* C, Real* Cbuffer, Param* p) {
   int i = blockIdx.x * blockDim.x + threadIdx.x;
   int j = blockIdx.y * blockDim.y + threadIdx.y;
   int Nchem = p[0].Nchem;
@@ -528,12 +511,10 @@ updateCKernel(Real* C, Real* Cbuffer, Param* p)
   }
 }
 
-__global__ void
-updateCollisionForceKernel(Real* phi,
-                           int2* grid_locations,
-                           Param* p,
-                           Real* collision_force)
-{
+__global__ void updateCollisionForceKernel(Real* phi,
+                                           int2* grid_locations,
+                                           Param* p,
+                                           Real* collision_force) {
   int i = blockIdx.x * blockDim.x + threadIdx.x;
   int j = blockIdx.y * blockDim.y + threadIdx.y;
   int k = blockIdx.z * blockDim.z + threadIdx.z;
@@ -559,16 +540,16 @@ updateCollisionForceKernel(Real* phi,
             Real phi_ly = derivativeY(phi, i - dx, j - dy, l, p);
             Real repulsion_force = p[k].m_repulsion * phi_ * phi_l;
             Real adhesion_force =
-              p[k].m_adhesion * (phi_kx * phi_lx + phi_ky * phi_ly);
+                p[k].m_adhesion * (phi_kx * phi_lx + phi_ky * phi_ly);
 
             collision_force[idx] +=
-              repulsion_force * phi_l +
-              adhesion_force /
-                sqrt(1 + 32.5 * phi_lx * phi_lx + 32.5 * phi_ly * phi_ly);
+                repulsion_force * phi_l +
+                adhesion_force /
+                    sqrt(1 + 32.5 * phi_lx * phi_lx + 32.5 * phi_ly * phi_ly);
             collision_force[idx_l] +=
-              repulsion_force * phi_ +
-              adhesion_force /
-                sqrt(1 + 32.5 * phi_kx * phi_kx + 32.5 * phi_ky * phi_ky);
+                repulsion_force * phi_ +
+                adhesion_force /
+                    sqrt(1 + 32.5 * phi_kx * phi_kx + 32.5 * phi_ky * phi_ky);
           }
         }
       }
@@ -577,12 +558,10 @@ updateCollisionForceKernel(Real* phi,
   }
 }
 
-__global__ void
-setupCurandStates(curandState* state,
-                  unsigned long long seed,
-                  unsigned long long offset,
-                  Param* p)
-{
+__global__ void setupCurandStates(curandState* state,
+                                  unsigned long long seed,
+                                  unsigned long long offset,
+                                  Param* p) {
   int i = blockIdx.x * blockDim.x + threadIdx.x;
   int j = blockIdx.y * blockDim.y + threadIdx.y;
   int k = blockIdx.z * blockDim.z + threadIdx.z;
@@ -593,9 +572,7 @@ setupCurandStates(curandState* state,
   }
 }
 
-__global__ void
-addKernel(Real* a, Real* da, Param* p)
-{
+__global__ void addKernel(Real* a, Real* da, Param* p) {
   int i = blockIdx.x * blockDim.x + threadIdx.x;
   int j = blockIdx.y * blockDim.y + threadIdx.y;
   int k = blockIdx.z * blockDim.z + threadIdx.z;
@@ -607,9 +584,7 @@ addKernel(Real* a, Real* da, Param* p)
   }
 }
 
-__global__ void
-createCOMXKernel(Real* phi, Real* buffer, Param* p)
-{
+__global__ void createCOMXKernel(Real* phi, Real* buffer, Param* p) {
   int i = blockIdx.x * blockDim.x + threadIdx.x;
   int j = blockIdx.y * blockDim.y + threadIdx.y;
   int k = blockIdx.z * blockDim.z + threadIdx.z;
@@ -622,9 +597,7 @@ createCOMXKernel(Real* phi, Real* buffer, Param* p)
   }
 }
 
-__global__ void
-createCOMYKernel(Real* phi, Real* buffer, Param* p)
-{
+__global__ void createCOMYKernel(Real* phi, Real* buffer, Param* p) {
   int i = blockIdx.x * blockDim.x + threadIdx.x;
   int j = blockIdx.y * blockDim.y + threadIdx.y;
   int k = blockIdx.z * blockDim.z + threadIdx.z;
@@ -637,9 +610,7 @@ createCOMYKernel(Real* phi, Real* buffer, Param* p)
   }
 }
 
-__global__ void
-createCOMAXKernel(Real* phi, Real* A, Real* buffer, Param* p)
-{
+__global__ void createCOMAXKernel(Real* phi, Real* A, Real* buffer, Param* p) {
   int i = blockIdx.x * blockDim.x + threadIdx.x;
   int j = blockIdx.y * blockDim.y + threadIdx.y;
   int k = blockIdx.z * blockDim.z + threadIdx.z;
@@ -651,9 +622,7 @@ createCOMAXKernel(Real* phi, Real* A, Real* buffer, Param* p)
   }
 }
 
-__global__ void
-createCOMAYKernel(Real* phi, Real* A, Real* buffer, Param* p)
-{
+__global__ void createCOMAYKernel(Real* phi, Real* A, Real* buffer, Param* p) {
   int i = blockIdx.x * blockDim.x + threadIdx.x;
   int j = blockIdx.y * blockDim.y + threadIdx.y;
   int k = blockIdx.z * blockDim.z + threadIdx.z;
@@ -665,9 +634,7 @@ createCOMAYKernel(Real* phi, Real* A, Real* buffer, Param* p)
   }
 }
 
-__global__ void
-multiplyKernel(Real* in1, Real* in2, Real* out, Param* p)
-{
+__global__ void multiplyKernel(Real* in1, Real* in2, Real* out, Param* p) {
   int i = blockIdx.x * blockDim.x + threadIdx.x;
   int j = blockIdx.y * blockDim.y + threadIdx.y;
   int k = blockIdx.z * blockDim.z + threadIdx.z;
@@ -679,9 +646,10 @@ multiplyKernel(Real* in1, Real* in2, Real* out, Param* p)
   }
 }
 
-__global__ void
-makeLabelImage(Real* phi, Real* buffer, int2* grid_location, Param* p)
-{
+__global__ void makeLabelImage(Real* phi,
+                               Real* buffer,
+                               int2* grid_location,
+                               Param* p) {
   int i = blockIdx.x * blockDim.x + threadIdx.x;
   int j = blockIdx.y * blockDim.y + threadIdx.y;
   int k = blockIdx.z * blockDim.z + threadIdx.z;
@@ -694,17 +662,15 @@ makeLabelImage(Real* phi, Real* buffer, int2* grid_location, Param* p)
   }
 }
 
-__global__ void
-copyToBacklogKernel(Real* d_outputs,
-                    Real2* d_com,
-                    Real2* d_comA,
-                    Real* d_area,
-                    Real* d_Aarea,
-                    int2* d_grid_location,
-                    int numCells,
-                    int step,
-                    int backlog_index)
-{
+__global__ void copyToBacklogKernel(Real* d_outputs,
+                                    Real2* d_com,
+                                    Real2* d_comA,
+                                    Real* d_area,
+                                    Real* d_Aarea,
+                                    int2* d_grid_location,
+                                    int numCells,
+                                    int step,
+                                    int backlog_index) {
   int i = blockIdx.x * blockDim.x + threadIdx.x;
   if (i < numCells) {
     int offset = backlog_index * numCells * 10;
@@ -735,18 +701,14 @@ copyToBacklogKernel(Real* d_outputs,
   }
 }
 
-__global__ void
-copyToX(Real* tmp_com, Real2* d_com, int numCells)
-{
+__global__ void copyToX(Real* tmp_com, Real2* d_com, int numCells) {
   int i = blockIdx.x * blockDim.x + threadIdx.x;
   if (i < numCells) {
     d_com[i].x = tmp_com[i];
   }
 }
 
-__global__ void
-copyToY(Real* tmp_com, Real2* d_com, int numCells)
-{
+__global__ void copyToY(Real* tmp_com, Real2* d_com, int numCells) {
   int i = blockIdx.x * blockDim.x + threadIdx.x;
   if (i < numCells) {
     d_com[i].y = tmp_com[i];

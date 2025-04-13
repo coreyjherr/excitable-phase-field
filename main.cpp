@@ -31,9 +31,7 @@ using std::vector;
 #include <thread>
 using std::thread;
 
-int
-main(int argc, char const* argv[])
-{
+int main(int argc, char const* argv[]) {
   if (argc > 4 || argc < 2) {
     std::cout << "Usage: ./run_phase_field config.toml [storage_location] "
                  "[fullOutput]"
@@ -68,7 +66,7 @@ main(int argc, char const* argv[])
 
   Param defaultParams;
   vector<vector<Real>> params =
-    loadParamsFromTOML(configFilePath, defaultParams);
+      loadParamsFromTOML(configFilePath, defaultParams);
   vector<vector<Real>> allCombinations = getAllCombinations(params);
 
   std::cout << "Number of combinations: " << allCombinations.size()
@@ -110,15 +108,10 @@ main(int argc, char const* argv[])
       // param.alpha = param.xi * param.alpha; // scale alpha by xi
       unsigned long long seed = 0;
 
-      threads.push_back(thread([thread_index,
-                                param,
-                                basePath,
-                                seed,
-                                useCondensed,
-                                simulationID,
-                                writeFullOutput]() {
-        Model model(
-          param, thread_index, basePath, seed, simulationID, writeFullOutput);
+      threads.push_back(thread([thread_index, param, basePath, seed,
+                                useCondensed, simulationID, writeFullOutput]() {
+        Model model(param, thread_index, basePath, seed, simulationID,
+                    writeFullOutput);
         bool progressBar = thread_index == 0;
         try {
           model.simulate(progressBar);
@@ -137,7 +130,7 @@ main(int argc, char const* argv[])
     std::string command = "scripts/create_video.py " + basePath + " -c -d";
 #else
     std::string command =
-      "scripts/create_video.py " + basePath + " -v -d --glob " + simulationID;
+        "scripts/create_video.py " + basePath + " -v -d --glob " + simulationID;
 #endif
 
     int script_result = system(command.c_str());
