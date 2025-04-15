@@ -76,7 +76,8 @@ struct Param {
   Real delta_r = 0.;
 } typedef Param;
 
-inline void writeParamFile(std::string filename, Param param,
+inline void writeParamFile(std::string filename,
+                           Param param,
                            unsigned long long seed) {
   std::ofstream fout(filename.c_str(), std::ios::out);
   fout << "N " << param.N << std::endl;
@@ -132,7 +133,8 @@ inline std::vector<std::vector<Real>> getAllCombinations(
     std::vector<std::vector<Real>> params) {
   // get all the combinations from all lists of parameters
   std::vector<std::vector<Real>> result;
-  if (params.size() == 0) return result;
+  if (params.size() == 0)
+    return result;
   if (params.size() == 1) {
     for (auto p : params[0]) {
       result.push_back({p});
@@ -153,9 +155,11 @@ inline std::vector<std::vector<Real>> getAllCombinations(
 
 // Function to load parameters from TOML file
 std::vector<std::vector<Real>> loadParamsFromTOML(
-    const std::string& filepath, const Param& defaults = Param());
+    const std::string& filepath,
+    const Param& defaults = Param());
 Param mapCombinationToParam(const std::vector<Real>& combination);
-bool writeParamToTOML(const Param& param, const std::string& filepath,
+bool writeParamToTOML(const Param& param,
+                      const std::string& filepath,
                       unsigned long long seed);
 void printParam(const Param& param);
 

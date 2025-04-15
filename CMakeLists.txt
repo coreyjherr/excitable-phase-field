@@ -30,7 +30,7 @@ set_target_properties(stochastic_phase_field PROPERTIES
 target_link_libraries(stochastic_phase_field PRIVATE -lcublas -lcurand)
 target_compile_options(stochastic_phase_field PRIVATE -O3)
 
-# set the executable 
+# set the executable
 add_executable(run_phase_field main.cpp)
 
 target_link_libraries(run_phase_field PRIVATE stochastic_phase_field)

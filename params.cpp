@@ -1,6 +1,6 @@
 #include "include/params.hpp"
 
-#include "include/toml.hpp"
+#include "dependencies/toml.hpp"
 
 std::vector<std::vector<Real>> loadParamsFromTOML(const std::string& filepath,
                                                   const Param& defaults) {

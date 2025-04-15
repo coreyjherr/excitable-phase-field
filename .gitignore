@@ -18,3 +18,4 @@ run_phase_field
 *.toml
 .vscode/
 scripts/
+.pre-commit-config.yaml

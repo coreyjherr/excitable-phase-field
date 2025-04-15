@@ -31,8 +31,8 @@ SOFTWARE
 #include <sstream>
 #include <thread>
 
+#include "dependencies/indicators.hpp"
 #include "include/error_check.cuh"
-#include "include/indicators.hpp"
 #include "include/kernels.cuh"
 #include "include/model.h"
 #include "include/params.hpp"
@@ -825,7 +825,8 @@ WriteError Model::writeDynamics(int step) {
     for (int i = 0; i < numCells * BACKLOG_SIZE * NUM_OUTPUT_COLUMNS; ++i) {
       if (std::isnan(h_output[i])) {
         std::cerr << "Error: Dynamics output" << i % NUM_OUTPUT_COLUMNS << ", "
-                  << i / NUM_OUTPUT_COLUMNS << " is NaN" << "\n";
+                  << i / NUM_OUTPUT_COLUMNS << " is NaN"
+                  << "\n";
         throw std::runtime_error("Dynamics output is NaN");
       }
     }
@@ -856,14 +857,16 @@ WriteError Model::writeDynamics(int step) {
     }
 
     if (std::isnan(cudaTypes->com[i].x) || std::isnan(cudaTypes->com[i].y)) {
-      std::cerr << "Error: COM" << i << " is NaN" << "\n";
+      std::cerr << "Error: COM" << i << " is NaN"
+                << "\n";
       std::cerr << "Area: " << area[i] << "\n";
       std::cerr << "COM: " << cudaTypes->com[i].x << ", " << cudaTypes->com[i].y
                 << "\n";
       throw std::runtime_error("COM is NaN");
     }
     if (std::isnan(cudaTypes->comA[i].x) || std::isnan(cudaTypes->comA[i].y)) {
-      std::cerr << "Error: COMA is NaN" << "\n";
+      std::cerr << "Error: COMA is NaN"
+                << "\n";
       std::cerr << "Area: " << Aarea[i] << "\n";
       std::cerr << "COMA: " << cudaTypes->comA[i].x << ", "
                 << cudaTypes->comA[i].y << "\n";

@@ -24,7 +24,7 @@ SOFTWARE
 #include <iostream>
 #include <vector>
 
-#include "include/indicators.hpp"
+#include "dependencies/indicators.hpp"
 #include "include/model.h"
 #include "include/params.hpp"
 using std::vector;

@@ -24,7 +24,7 @@ class CompressedVideo:
         self.video_indexed = False
 
         self.dtype = dtype
-    
+
     def get_compressed_indices(self):
         current_position = 0
         current_size = (0, 0)
@@ -42,7 +42,7 @@ class CompressedVideo:
         if not self.video_indexed:
             self.get_compressed_indices()
         return self.num_frames
-    
+
     def __getitem__(self, idx):
         if idx >= self.num_frames:
             raise IndexError(f"Index {idx} out of bounds")
