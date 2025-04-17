@@ -59,10 +59,6 @@ The program accepts a configuration file in TOML format and optional arguments f
 
 This runs the simulation using `config.toml`, stores results in `./results/`, and generates condensed output.
 
-### Example TOML Configuration
-
-The config file should specify what parameters you want to be changed from the defaults. For example, you can set the number of cells, time steps, and other simulation parameters. If you want to run multiple simulations with a combination of parameters, you can specify them in the TOML file. Every entry should be a list.
-
 ## Configuration
 
 The simulation parameters are specified in a TOML file. If you want to run multiple simulations you can include multiple values for the parameters. The code will run every combination of all parameters. An example parameter file that runs 4 simulations with different parameters is shown below:
