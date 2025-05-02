@@ -23,9 +23,8 @@ SOFTWARE
 #ifndef KERNELS_CUH
 #define KERNELS_CUH
 
-#include "params.hpp"
-// #include <__clang_cuda_runtime_wrapper.h>
 #include <curand_kernel.h>
+#include "params.hpp"
 
 // #define USE_FLOAT
 
@@ -34,6 +33,8 @@ using Real2 = float2;
 #else
 using Real2 = double2;
 #endif
+
+#define N 256
 
 __device__ __forceinline__ Real
 laplacian(Real* phi, int i, int j, int k, Param p);

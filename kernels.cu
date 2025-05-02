@@ -21,7 +21,6 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE
 */
 #include <curand_kernel.h>
-#include <stdio.h>
 
 #include "include/kernels.cuh"
 #include "include/params.hpp"
@@ -30,7 +29,6 @@ __global__ void initializePhiKernel(Real* phi, Param* p) {
   int i = blockIdx.x * blockDim.x + threadIdx.x;
   int j = blockIdx.y * blockDim.y + threadIdx.y;
   int k = blockIdx.z * blockDim.z + threadIdx.z;
-  int N = p[k].N;
 
   if (i < N && j < N && k < p[k].numCells) {
     int idx = k * N * N + j * N + i;
@@ -46,7 +44,6 @@ __global__ void updateBoundingIndex(int2* grid_cublas_index, Param* p) {
 
   if (i < p[0].numCells) {
     int2 minmax = grid_cublas_index[i];
-    int N = p[0].N;
     grid_cublas_index[i].x = (minmax.x - 1) % N;
     grid_cublas_index[i].y = (minmax.y - 1) / N;
   }
@@ -59,7 +56,6 @@ __global__ void getXIndexMaskedKernel(Real* phi,
   int i = blockIdx.x * blockDim.x + threadIdx.x;
   int j = blockIdx.y * blockDim.y + threadIdx.y;
   int k = blockIdx.z * blockDim.z + threadIdx.z;
-  int N = p[k].N;
 
   if (i < N && j < N && k < p[k].numCells) {
     int idx = k * N * N + j * N + i;
@@ -77,7 +73,6 @@ __global__ void getYIndexMaskedKernel(Real* phi,
   int i = blockIdx.x * blockDim.x + threadIdx.x;
   int j = blockIdx.y * blockDim.y + threadIdx.y;
   int k = blockIdx.z * blockDim.z + threadIdx.z;
-  int N = p[k].N;
 
   if (i < N && j < N && k < p[k].numCells) {
     int idx = k * N * N + j * N + i;
@@ -95,7 +90,6 @@ __global__ void rollGridXKernel(Real* phi,
   int i = blockIdx.x * blockDim.x + threadIdx.x;
   int j = blockIdx.y * blockDim.y + threadIdx.y;
   int k = blockIdx.z * blockDim.z + threadIdx.z;
-  int N = p[k].N;
 
   if (i < N && j < N && k < p[k].numCells) {
     int idx = k * N * N + j * N + i;
@@ -122,7 +116,6 @@ __global__ void rollGridYKernel(Real* phi,
   int i = blockIdx.x * blockDim.x + threadIdx.x;
   int j = blockIdx.y * blockDim.y + threadIdx.y;
   int k = blockIdx.z * blockDim.z + threadIdx.z;
-  int N = p[k].N;
 
   if (i < N && j < N && k < p[k].numCells) {
     int idx = k * N * N + j * N + i;
@@ -147,7 +140,6 @@ __global__ void updateGridLocationKernel(int2* d_grid_minmax,
   int k = blockIdx.x * blockDim.x + threadIdx.x;
   if (k < p[k].numCells) {
     int2 minmax = d_grid_minmax[k];
-    int N = p[k].N;
 
     int x_distance = (minmax.x - 1) % N;
     int y_distance = (minmax.y - 1) / N;
@@ -168,8 +160,6 @@ __global__ void updateGridLocationKernel(int2* d_grid_minmax,
 
 __device__ __forceinline__ Real
 laplacian(Real* phi, int i, int j, int k, Param* p) {
-  int N = p[k].N;
-
   int i1 = (i + 1) % N;
   int i2 = (i - 1 + N) % N;
   int j1 = (j + 1) % N;
@@ -182,21 +172,20 @@ laplacian(Real* phi, int i, int j, int k, Param* p) {
 }
 
 __device__ __forceinline__ Real laplacianChem(Real* C, int i, int j, Param* p) {
-  int N = p[0].Nchem;
+  int Nc = p[0].Nchem;
 
   // non-periodic boundary conditions, let the boundary be zero
 
-  Real Cij1 = i + 1 < N ? C[j * N + i + 1] : 0;
-  Real Cij2 = i - 1 >= 0 ? C[j * N + i - 1] : 0;
-  Real Cj1i = j + 1 < N ? C[(j + 1) * N + i] : 0;
-  Real Cj2i = j - 1 >= 0 ? C[(j - 1) * N + i] : 0;
+  Real Cij1 = i + 1 < Nc ? C[j * Nc + i + 1] : 0;
+  Real Cij2 = i - 1 >= 0 ? C[j * Nc + i - 1] : 0;
+  Real Cj1i = j + 1 < Nc ? C[(j + 1) * Nc + i] : 0;
+  Real Cj2i = j - 1 >= 0 ? C[(j - 1) * Nc + i] : 0;
 
-  return (Cij1 + Cij2 + Cj1i + Cj2i - 4 * C[j * N + i]) / (p[0].dx * p[0].dx);
+  return (Cij1 + Cij2 + Cj1i + Cj2i - 4 * C[j * Nc + i]) / (p[0].dx * p[0].dx);
 }
 
 __device__ __forceinline__ Real
 derivativeX(Real* phi, int i, int j, int k, Param* p) {
-  int N = p[k].N;
   int i1 = (i + 1) % N;
   int i2 = (i - 1 + N) % N;
 
@@ -206,7 +195,6 @@ derivativeX(Real* phi, int i, int j, int k, Param* p) {
 
 __device__ __forceinline__ Real
 derivativeY(Real* phi, int i, int j, int k, Param* p) {
-  int N = p[k].N;
   int j1 = (j + 1) % N;
   int j2 = (j - 1 + N) % N;
 
@@ -218,9 +206,9 @@ __device__ __forceinline__ Real derivativeXChem(Real* C,
                                                 int i,
                                                 int j,
                                                 Param* p) {
-  int N = p[0].Nchem;
-  Real Cij1 = i + 1 < N ? C[j * N + i + 1] : 0;
-  Real Cij2 = i - 1 >= 0 ? C[j * N + i - 1] : 0;
+  int Nc = p[0].Nchem;
+  Real Cij1 = i + 1 < Nc ? C[j * Nc + i + 1] : 0;
+  Real Cij2 = i - 1 >= 0 ? C[j * Nc + i - 1] : 0;
 
   return (Cij1 - Cij2) / (2 * p[0].dx);
 }
@@ -229,9 +217,9 @@ __device__ __forceinline__ Real derivativeYChem(Real* C,
                                                 int i,
                                                 int j,
                                                 Param* p) {
-  int N = p[0].Nchem;
-  Real Cj1i = j + 1 < N ? C[(j + 1) * N + i] : 0;
-  Real Cj2i = j - 1 >= 0 ? C[(j - 1) * N + i] : 0;
+  int Nc = p[0].Nchem;
+  Real Cj1i = j + 1 < Nc ? C[(j + 1) * Nc + i] : 0;
+  Real Cj2i = j - 1 >= 0 ? C[(j - 1) * Nc + i] : 0;
 
   return (Cj1i - Cj2i) / (2 * p[0].dx);
 }
@@ -249,7 +237,6 @@ __global__ void updatePhiKernel(Real* phi,
   int j = blockIdx.y * blockDim.y + threadIdx.y;
   int k = blockIdx.z * blockDim.z + threadIdx.z;
 
-  int N = p[k].N;
   if (i < N && j < N && k < p[k].numCells) {
     int idx = k * N * N + j * N + i;
     phi_t[idx] = 0;
@@ -267,6 +254,7 @@ __global__ void updatePhiKernel(Real* phi,
     const int2 thread_loc = {grid_location[k].x + i - N / 2,
                              grid_location[k].y + j - N / 2};
     Real wall_force = 0;
+#ifdef CIRCULAR_CONFINEMENT
     const Real thread_R2 =
         (thread_loc.x * thread_loc.x + thread_loc.y * thread_loc.y) * p[k].dx *
         p[k].dx;
@@ -277,6 +265,13 @@ __global__ void updatePhiKernel(Real* phi,
           (1 + tanh(3 * (sqrt(thread_R2) - p[k].R_wall) / sqrt(p[k].eps2))) *
           p[k].m_wall_repulsion * phi_;
     }
+#endif
+#ifdef SQUARE_CONFINEMENT
+    if (abs(thread_loc.x) > p[k].R_wall / p[k].dx ||
+        abs(thread_loc.y) > p[k].R_wall / p[k].dx) {
+      wall_force = p[k].m_wall_repulsion * phi_;
+    }
+#endif
 
     dphi += sqrt(phi_x * phi_x + phi_y * phi_y) *
                 (-p[k].B_s * (area[k] * p[k].dx * p[k].dx - p[k].S0) +
@@ -301,7 +296,6 @@ __global__ void updatePhiKernelChemo(Real* phi,
   int j = blockIdx.y * blockDim.y + threadIdx.y;
   int k = blockIdx.z * blockDim.z + threadIdx.z;
 
-  int N = p[k].N;
   if (i < N && j < N && k < p[k].numCells) {
     int idx = k * N * N + j * N + i;
     buffer[idx] = 0;
@@ -349,7 +343,6 @@ __global__ void updateAKernel(Real* phi,
   int i = blockIdx.x * blockDim.x + threadIdx.x;
   int j = blockIdx.y * blockDim.y + threadIdx.y;
   int k = blockIdx.z * blockDim.z + threadIdx.z;
-  int N = p[k].N;
 
   if (i < N && j < N && k < p[k].numCells) {
     int idx = k * N * N + j * N + i;
@@ -362,9 +355,9 @@ __global__ void updateAKernel(Real* phi,
       Real A_x = derivativeX(A, i, j, k, p);
       Real A_y = derivativeY(A, i, j, k, p);
 
-      // Real ridge_factor = (grid_location[k].x + i) % 10 < 5 ?
-      // p[k].chem_strength : 1;
-      Real ridge_factor = 1;
+      Real ridge_factor =
+          (grid_location[k].x + i) % 10 < 5 ? p[k].chem_strength : 1;
+      // Real ridge_factor = 1;
 
       dA += p[k].D_A * laplacian(A, i, j, k, p);
       dA += p[k].D_A * (phi_x * A_x + phi_y * A_y) / phi_;
@@ -399,8 +392,6 @@ __global__ void updateRKernel(Real* phi,
   int i = blockIdx.x * blockDim.x + threadIdx.x;
   int j = blockIdx.y * blockDim.y + threadIdx.y;
   int k = blockIdx.z * blockDim.z + threadIdx.z;
-
-  int N = p[k].N;
 
   if (i < N && j < N && k < p[k].numCells) {
     int idx = k * N * N + j * N + i;
@@ -454,8 +445,6 @@ __global__ void updateRKernelChemo(Real* phi,
   int i = blockIdx.x * blockDim.x + threadIdx.x;
   int j = blockIdx.y * blockDim.y + threadIdx.y;
   int k = blockIdx.z * blockDim.z + threadIdx.z;
-
-  int N = p[k].N;
 
   if (i < N && j < N && k < p[k].numCells) {
     int idx = k * N * N + j * N + i;
@@ -519,8 +508,6 @@ __global__ void updateCollisionForceKernel(Real* phi,
   int j = blockIdx.y * blockDim.y + threadIdx.y;
   int k = blockIdx.z * blockDim.z + threadIdx.z;
 
-  int N = p[k].N;
-
   if (i < N && j < N && k < p[k].numCells) {
     int idx = k * N * N + j * N + i;
     Real phi_ = phi[idx];
@@ -566,8 +553,8 @@ __global__ void setupCurandStates(curandState* state,
   int j = blockIdx.y * blockDim.y + threadIdx.y;
   int k = blockIdx.z * blockDim.z + threadIdx.z;
 
-  if (i < p[k].N && j < p[k].N && k < p[k].numCells) {
-    int idx = k * p[k].N * p[k].N + j * p[k].N + i;
+  if (i < N && j < N && k < p[k].numCells) {
+    int idx = k * N * N + j * N + i;
     curand_init(seed, idx + offset, 0, &state[idx]);
   }
 }
@@ -576,7 +563,6 @@ __global__ void addKernel(Real* a, Real* da, Param* p) {
   int i = blockIdx.x * blockDim.x + threadIdx.x;
   int j = blockIdx.y * blockDim.y + threadIdx.y;
   int k = blockIdx.z * blockDim.z + threadIdx.z;
-  int N = p[k].N;
 
   if (i < N && j < N && k < p[k].numCells) {
     int idx = k * N * N + j * N + i;
@@ -588,7 +574,6 @@ __global__ void createCOMXKernel(Real* phi, Real* buffer, Param* p) {
   int i = blockIdx.x * blockDim.x + threadIdx.x;
   int j = blockIdx.y * blockDim.y + threadIdx.y;
   int k = blockIdx.z * blockDim.z + threadIdx.z;
-  int N = p[k].N;
 
   if (i < N && j < N && k < p[k].numCells) {
     int idx = k * N * N + j * N + i;
@@ -601,7 +586,6 @@ __global__ void createCOMYKernel(Real* phi, Real* buffer, Param* p) {
   int i = blockIdx.x * blockDim.x + threadIdx.x;
   int j = blockIdx.y * blockDim.y + threadIdx.y;
   int k = blockIdx.z * blockDim.z + threadIdx.z;
-  int N = p[k].N;
 
   if (i < N && j < N && k < p[k].numCells) {
     int idx = k * N * N + j * N + i;
@@ -614,7 +598,6 @@ __global__ void createCOMAXKernel(Real* phi, Real* A, Real* buffer, Param* p) {
   int i = blockIdx.x * blockDim.x + threadIdx.x;
   int j = blockIdx.y * blockDim.y + threadIdx.y;
   int k = blockIdx.z * blockDim.z + threadIdx.z;
-  int N = p[k].N;
 
   if (i < N && j < N && k < p[k].numCells) {
     int idx = k * N * N + j * N + i;
@@ -626,7 +609,6 @@ __global__ void createCOMAYKernel(Real* phi, Real* A, Real* buffer, Param* p) {
   int i = blockIdx.x * blockDim.x + threadIdx.x;
   int j = blockIdx.y * blockDim.y + threadIdx.y;
   int k = blockIdx.z * blockDim.z + threadIdx.z;
-  int N = p[k].N;
 
   if (i < N && j < N && k < p[k].numCells) {
     int idx = k * N * N + j * N + i;
@@ -638,7 +620,6 @@ __global__ void multiplyKernel(Real* in1, Real* in2, Real* out, Param* p) {
   int i = blockIdx.x * blockDim.x + threadIdx.x;
   int j = blockIdx.y * blockDim.y + threadIdx.y;
   int k = blockIdx.z * blockDim.z + threadIdx.z;
-  int N = p[k].N;
 
   if (i < N && j < N && k < p[k].numCells) {
     int idx = k * N * N + j * N + i;
@@ -653,7 +634,7 @@ __global__ void makeLabelImage(Real* phi,
   int i = blockIdx.x * blockDim.x + threadIdx.x;
   int j = blockIdx.y * blockDim.y + threadIdx.y;
   int k = blockIdx.z * blockDim.z + threadIdx.z;
-  int N = p[k].N;
+
   if (i < N && j < N && k < p[k].numCells) {
     int idx = k * N * N + j * N + i;
     buffer[idx] = 0;

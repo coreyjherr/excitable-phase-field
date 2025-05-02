@@ -35,7 +35,7 @@ using Real = double;
 #include <vector>
 
 struct Param {
-  int N = 256;
+  int gridN = 256;
   int T = 1000 / 0.001;
   int blind = 25;
   Real dt = 0.001;
@@ -80,7 +80,7 @@ inline void writeParamFile(std::string filename,
                            Param param,
                            unsigned long long seed) {
   std::ofstream fout(filename.c_str(), std::ios::out);
-  fout << "N " << param.N << std::endl;
+  fout << "N " << param.gridN << std::endl;
   fout << "T " << param.T << std::endl;
   fout << "blind " << param.blind << std::endl;
   fout << "dt " << param.dt << std::endl;

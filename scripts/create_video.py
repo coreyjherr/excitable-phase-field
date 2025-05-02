@@ -11,6 +11,61 @@ from matplotlib.cm import ScalarMappable
 import seaborn as sns
 from scipy.ndimage import center_of_mass
 
+def read_dynamics_file(filename: Path | str) -> pd.DataFrame:
+    # open the file and read the first int to get the number of columns
+    if isinstance(filename, str):
+        filename = Path(filename)
+    if not filename.exists():
+        raise FileNotFoundError(f"File {filename} does not exist")
+
+    if filename.suffix == ".dat":
+        num_columns, real_width_bytes = np.fromfile(filename, dtype=np.float32, count=2)
+        file_size_bytes = int(filename.stat().st_size)
+        real_width_bytes = int(real_width_bytes)
+        num_columns = int(num_columns)
+        num_rows = int(
+            (file_size_bytes - 2 * real_width_bytes) // (num_columns * real_width_bytes)
+        )
+
+        column_names = [
+            "cell",
+            "t",
+            "grid_offset_x",
+            "grid_offset_y",
+            "phi_area",
+            "A_area",
+            "com_x",
+            "com_y",
+            "comA_x",
+            "comA_y",
+        ]
+        dtype = np.float32 if real_width_bytes == 4 else np.float64
+        data = np.fromfile(
+            filename,
+            dtype=dtype,
+            count=int(num_columns * num_rows),
+            offset=2 * real_width_bytes,
+        )
+        df = pd.DataFrame(
+            data.reshape(int(num_rows), int(num_columns)), columns=column_names
+        )
+        df["com_x"] = df["com_x"] + df["grid_offset_x"]
+        df["com_y"] = df["com_y"] + df["grid_offset_y"]
+        df["comA_x"] = df["comA_x"] + df["grid_offset_x"]
+        df["comA_y"] = df["comA_y"] + df["grid_offset_y"]
+
+        com_x_avg_0 = df.query("t == 0")["com_x"].mean()
+        com_y_avg_0 = df.query("t == 0")["com_y"].mean()
+        df["com_x"] = df["com_x"] - com_x_avg_0
+        df["com_y"] = df["com_y"] - com_y_avg_0
+        df["comA_x"] = df["comA_x"] - com_x_avg_0
+        df["comA_y"] = df["comA_y"] - com_y_avg_0
+    elif filename.suffix == ".csv":
+        df = pd.read_csv(filename)
+
+    return df
+
+
 class CompressedVideo:
     def __init__(self, filename: str | Path, dtype: np.dtype = np.float32):
         self.filename = filename if isinstance(filename, Path) else Path(filename)
@@ -72,39 +127,6 @@ class CompressedVideo:
             current_position += current_size[0] * current_size[1] * self.dtype.itemsize
             yield frame
 
-
-def read_dynamics_file(filename: Path, num_rows: int) -> pd.DataFrame:
-    # open the file and read the first int to get the number of columns
-    if not filename.exists():
-        raise FileNotFoundError(f"File {filename} does not exist")
-
-    if filename.suffix == ".dat":
-        num_columns, real_width = np.fromfile(filename, dtype=np.float32, count=2)
-        column_names = [
-            "cell",
-            "t",
-            "grid_offset_x",
-            "grid_offset_y",
-            "phi_area",
-            "A_area",
-            "com_x",
-            "com_y",
-            "comA_x",
-            "comA_y",
-        ]
-        data = np.fromfile(
-            filename,
-            dtype=np.float32,
-            count=int(num_columns * num_rows),
-            offset=8,
-        )
-        df = pd.DataFrame(
-            data.reshape(int(num_rows), int(num_columns)), columns=column_names
-        )
-    elif filename.suffix == ".csv":
-        df = pd.read_csv(filename)
-
-    return df
 
 
 def create_angle_image(label):
@@ -257,7 +279,7 @@ def create_label_video(
     skip_num = int(400 / param_df["blind"].iloc[0])
     num_rows = param_df["T"].iloc[0] / param_df["blind"].iloc[0] * numCells
 
-    df = read_dynamics_file(dynamics_filename, num_rows)
+    df = read_dynamics_file(dynamics_filename)
     R_cutoff = 500
 
     # get the grid locations reshaped to be numCells x T x 2
@@ -272,6 +294,7 @@ def create_label_video(
     )
     directions = np.stack([grid_location_x, grid_location_y], axis=-1)
     directions = directions.astype(np.int32)[:, ::skip_num, :]
+    print(directions.shape)
 
     max_y = np.max(directions[:, :, 1])
     max_x = np.max(directions[:, :, 0])
@@ -328,13 +351,13 @@ def create_label_video(
     if make_angle_image:
         background_color = np.array(hex2color("#000000"), dtype=np.uint8) * 255
 
-    norm = TwoSlopeNorm(vmin=min_A, vcenter=avg_A, vmax=max_A)
-    sm = ScalarMappable(norm=norm, cmap="bwr")
+    # norm = TwoSlopeNorm(vmin=min_A, vcenter=avg_A, vmax=max_A)
+    # sm = ScalarMappable(norm=norm, cmap="bwr")
 
-    # Create a color palette centered on the average value of A
-    palette = sm.to_rgba(np.linspace(min_A, max_A, 256))[:, :3] * 255
-    palette = palette.astype(np.uint8)
-    palette = palette[:, np.newaxis, [2, 1, 0]]
+    # # Create a color palette centered on the average value of A
+    # palette = sm.to_rgba(np.linspace(min_A, max_A, 256))[:, :3] * 255
+    # palette = palette.astype(np.uint8)
+    # palette = palette[:, np.newaxis, [2, 1, 0]]
     progress_bar_on = not verbose
 
     for i in trange(
@@ -422,7 +445,7 @@ def create_label_video(
 
         elif ~make_angle_image:
             A = (A * 255).astype(np.uint8)
-            A = cv2.applyColorMap(A, palette).astype(np.uint8)
+            # A = cv2.applyColorMap(A, palette).astype(np.uint8)
 
             A_masked = cv2.bitwise_and(A, A, mask=phi)
             A_masked += cv2.bitwise_and(
@@ -586,7 +609,7 @@ def create_label_video_from_uncompressed(
     print(T, skip_num)
     num_rows = param_df["T"].iloc[0] / param_df["blind"].iloc[0] * numCells
 
-    df = read_dynamics_file(dynamics_filename, num_rows)
+    df = read_dynamics_file(dynamics_filename)
     R_cutoff = 500 / 0.2
 
     # get the grid locations reshaped to be numCells x T x 2
@@ -642,13 +665,13 @@ def create_label_video_from_uncompressed(
     max_A = 0.9 * max_A
 
     background_color = np.array(hex2color("#FFFFFF"), dtype=np.uint8) * 255
-    norm = TwoSlopeNorm(vmin=min_A, vcenter=avg_A, vmax=max_A)
-    sm = ScalarMappable(norm=norm, cmap="bwr")
+    # norm = TwoSlopeNorm(vmin=min_A, vcenter=avg_A, vmax=max_A)
+    # sm = ScalarMappable(norm=norm, cmap="bwr")
 
-    # Create a color palette centered on the average value of A
-    palette = sm.to_rgba(np.linspace(min_A, max_A, 256))[:, :3] * 255
-    palette = palette.astype(np.uint8)
-    palette = palette[:, np.newaxis, [2, 1, 0]]
+    # # Create a color palette centered on the average value of A
+    # palette = sm.to_rgba(np.linspace(min_A, max_A, 256))[:, :3] * 255
+    # palette = palette.astype(np.uint8)
+    # palette = palette[:, np.newaxis, [2, 1, 0]]
 
     for t in trange(T - 1, desc=phi_filename.stem, dynamic_ncols=True):
         label = np.zeros((size_x, size_y), dtype=np.int32)
@@ -694,7 +717,7 @@ def create_label_video_from_uncompressed(
         A = ((np.clip(A, min_A, max_A) - min_A) / (max_A - min_A) * 255).astype(
             np.uint8
         )
-        A = cv2.applyColorMap(A, palette).astype(np.uint8)
+        # A = cv2.applyColorMap(A, palette).astype(np.uint8)
         phi = phi > 0.5
         phi = phi.astype(np.uint8)
 

@@ -73,11 +73,14 @@ class Model {
   void rollAllFieldsY();
   void initializeCellGrid(Real totalArea);
   void initializeOutput(std::string basePath, std::string time_str);
+  void preallocateOutput(std::string filePath, size_t fileSize);
+  void deleteOutput();
   void initializeDynamicsOutput(std::string basePath, std::string time_str);
   void copyToBacklog(int step, int backlog_index);
   bool writeFullOutput_;
   bool writeCondensedOutput_;
   bool writeDynamicsOutput_;
+  std::string phi_filename, A_filename, label_filename, C_filename;
 
  public:
   unsigned long long rngSeed;
@@ -104,13 +107,14 @@ class Model {
   std::vector<Real> getCOMAX();
   std::vector<Real> getCOMAY();
   std::vector<Real> getArea();
-  WriteError writeFullOutput();
-  WriteError writeDynamics(int step);
+  void writeFullOutput();
+  void writeDynamics(int step);
   void writeInBackground(bool useCondensedOutput = false);
   void updateCOM();
   WriteError makeCondensedOutput(Real* field1,
                                  Real* field2,
-                                 std::ofstream& outputField);
+                                 std::ofstream& outputField,
+                                 bool overwriteFlag = false);
   std::string simulationID;
 };
 

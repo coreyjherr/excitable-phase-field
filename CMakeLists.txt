@@ -34,11 +34,12 @@ target_compile_options(stochastic_phase_field PRIVATE -O3)
 add_executable(run_phase_field main.cpp)
 
 target_link_libraries(run_phase_field PRIVATE stochastic_phase_field)
-target_compile_options(run_phase_field PUBLIC -O3)
+target_compile_options(run_phase_field PUBLIC -O3 )
 
 # set compiler options for using various features of the code
 option(CHEMO "Use chemotaxis" OFF)
 option(USE_BACKLOG "Use gpu backlog for outputs" ON)
+option(SQUARE_CONFINEMENT "Use square confinement" OFF)
 
 if(CHEMO)
     target_compile_definitions(stochastic_phase_field PRIVATE USE_CHEMO)
@@ -46,11 +47,20 @@ endif()
 
 if(USE_BACKLOG)
     # print USE_BACKLOG to the console
-    message(STATUS "Using backlog for outputs")
+    message(STATUS "[CONFIG] Using backlog for outputs")
     target_compile_definitions(stochastic_phase_field PRIVATE USE_DEVICE_BACKLOG)
 else()
     # print USE_BACKLOG to the console
-    message(STATUS "Not using backlog for outputs")
+    message(STATUS "[CONFIG] Not using backlog for outputs")
+endif()
+
+if(SQUARE_CONFINEMENT)
+    # print SQUARE_CONFINEMENT to the console
+    message(STATUS "[CONFIG] Using square confinement")
+    target_compile_definitions(stochastic_phase_field PRIVATE SQUARE_CONFINEMENT)
+else()
+    message(STATUS "[CONFIG] Using circular confinement")
+    target_compile_definitions(stochastic_phase_field PRIVATE CIRCULAR_CONFINEMENT)
 endif()
 
 option(BUILD_TESTS "Build tests" OFF)

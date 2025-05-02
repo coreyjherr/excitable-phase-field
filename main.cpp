@@ -115,6 +115,8 @@ int main(int argc, char const* argv[]) {
         bool progressBar = thread_index == 0;
         try {
           model.simulate(progressBar);
+        } catch (const std::system_error& e) {
+          throw e;
         } catch (const std::runtime_error& e) {
           std::cerr << "Caught exception: " << e.what() << std::endl;
         }

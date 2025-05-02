@@ -41,7 +41,7 @@ std::vector<std::vector<Real>> loadParamsFromTOML(const std::string& filepath,
 
     // Read each parameter as a vector, using the default value if the key is
     // missing
-    params.push_back(readArray("N", defaults.N));
+    params.push_back(readArray("gridN", defaults.gridN));
     params.push_back(readArray("T", defaults.T));
     params.push_back(readArray("blind", defaults.blind));
     params.push_back(readArray("dt", defaults.dt));
@@ -98,7 +98,7 @@ Param mapCombinationToParam(const std::vector<Real>& combination) {
   }
 
   // Map the values to the Param struct
-  params.N = static_cast<int>(combination[0]);
+  params.gridN = static_cast<int>(combination[0]);
   params.T = static_cast<int>(combination[1]);
   params.blind = static_cast<int>(combination[2]);
   params.dt = combination[3];
@@ -148,8 +148,8 @@ bool writeParamToTOML(const Param& params,
     // Create a toml::table and populate it with the Param values using an
     // initializer list
     auto tbl = toml::table{
-        {"N",
-         static_cast<int64_t>(params.N)},  // Cast to int64_t for TOML integer
+        {"gridN", static_cast<int64_t>(
+                      params.gridN)},  // Cast to int64_t for TOML integer
         {"T", static_cast<int64_t>(params.T)},
         {"blind", static_cast<int64_t>(params.blind)},
         {"dt", params.dt},  // No cast needed for floating-point values
@@ -207,7 +207,7 @@ bool writeParamToTOML(const Param& params,
 }
 
 void printParam(const Param& param) {
-  std::cout << "N " << param.N << std::endl;
+  std::cout << "N " << param.gridN << std::endl;
   std::cout << "T " << param.T << std::endl;
   std::cout << "blind " << param.blind << std::endl;
   std::cout << "dt " << param.dt << std::endl;
@@ -241,7 +241,7 @@ void printParam(const Param& param) {
   std::cout << "chem_strength " << param.chem_strength << std::endl;
   std::cout << "chem_decay " << param.chem_decay << std::endl;
   std::cout << "Dchem " << param.Dchem << std::endl;
-  std::cout << "Nchem " << param.Nchem << std::endl;
+  std::cout << "gridNchem " << param.Nchem << std::endl;
   std::cout << "chem_force " << param.chem_force << std::endl;
   std::cout << "delta_r " << param.delta_r << std::endl;
 }
