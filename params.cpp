@@ -80,6 +80,7 @@ std::vector<std::vector<Real>> loadParamsFromTOML(const std::string& filepath,
     params.push_back(readArray("Nchem", defaults.Nchem));
     params.push_back(readArray("chem_force", defaults.chem_force));
     params.push_back(readArray("delta_r", defaults.delta_r));
+    params.push_back(readArray("seed", defaults.seed));
   } catch (const toml::parse_error& err) {
     std::cerr << "Error parsing TOML file: " << err.what() << std::endl;
   }
@@ -91,7 +92,7 @@ Param mapCombinationToParam(const std::vector<Real>& combination) {
   Param params;
 
   // Ensure the combination has the correct number of elements
-  if (combination.size() < 34) {
+  if (combination.size() < 38) {
     std::cerr << "Error: Combination vector has insufficient elements."
               << std::endl;
     return params;
@@ -134,9 +135,10 @@ Param mapCombinationToParam(const std::vector<Real>& combination) {
   params.chem_strength = combination[31];
   params.chem_decay = combination[32];
   params.Dchem = combination[33];
-  params.Nchem = static_cast<int>(combination[36]);
+  params.Nchem = static_cast<int>(combination[34]);
   params.chem_force = combination[35];
   params.delta_r = combination[36];
+  params.seed = static_cast<int>(combination[37]);
 
   return params;
 }

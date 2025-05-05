@@ -431,8 +431,9 @@ void Model::initializeOutput(std::string basePath, std::string time_str) {
 void Model::initializeDynamicsOutput(std::string basePath,
                                      std::string time_str) {
   std::string dynamics_filename = basePath + "dynamics_" + time_str + ".dat";
-  preallocateOutput(dynamics_filename, numCells * sizeof(Real) *
-                                           NUM_OUTPUT_COLUMNS * p.T / p.blind);
+  // preallocateOutput(dynamics_filename, numCells * sizeof(Real) *
+  //                                          NUM_OUTPUT_COLUMNS * p.T /
+  //                                          p.blind);
   dynamics_output.open(dynamics_filename, std::ios::binary | std::ios::out);
   // rewind the file to the beginning
 

@@ -74,6 +74,7 @@ struct Param {
   int Nchem = 1024;
   Real chem_force = 1;
   Real delta_r = 0.;
+  int seed = 0;
 } typedef Param;
 
 inline void writeParamFile(std::string filename,

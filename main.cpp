@@ -79,6 +79,7 @@ int main(int argc, char const* argv[]) {
   int numBlocks = numSimulations / numThreads + 1;
   std::cout << "Running " << numSimulations << " simulations" << std::endl;
   bool useCondensed = true;
+  unsigned long long numSeeds = 4;
 
   for (int block_index = 0; block_index < numBlocks; block_index++) {
     // create a vector of 4 threads, each thread will run a simulation
@@ -106,7 +107,7 @@ int main(int argc, char const* argv[]) {
 
       Param param = mapCombinationToParam(allCombinations[idx]);
       // param.alpha = param.xi * param.alpha; // scale alpha by xi
-      unsigned long long seed = 0;
+      unsigned long long seed = (unsigned long long)param.seed;
 
       threads.push_back(thread([thread_index, param, basePath, seed,
                                 useCondensed, simulationID, writeFullOutput]() {
