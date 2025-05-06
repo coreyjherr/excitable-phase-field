@@ -74,7 +74,7 @@ SOFTWARE
 #endif
 
 #define NUM_OUTPUT_COLUMNS 10
-#define BACKLOG_SIZE 20
+#define BACKLOG_SIZE 10
 
 Real initializeParamArray(Param p, Param* p_array) {
   // Initialize the parameter array with the same parameters but different

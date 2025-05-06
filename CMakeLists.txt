@@ -5,6 +5,16 @@ set(CMAKE_CUDA_HOST_COMPILER /usr/bin/g++-11)
 cmake_minimum_required(VERSION 3.20)
 project(stochastic_phase_field LANGUAGES CXX CUDA)
 
+# this project is only verified for gcc 11.x
+if (CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
+    message(STATUS "Using GCC compiler")
+    if (CMAKE_CXX_COMPILER_VERSION VERSION_LESS 11.0 OR CMAKE_CXX_COMPILER_VERSION VERSION_GREATER_EQUAL 12.0)
+        # This must be filled in with the path to your gcc and g++ compilers version 11.x
+    endif()
+else()
+    message(FATAL_ERROR "This project is only verified for GCC 11.x")
+endif()
+
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)

@@ -11,21 +11,43 @@ This project implements a stochastic phase field model for simulating physical s
 
 ## Prerequisites
 
-- **CUDA Toolkit** (version 10.0 or later)
+- **CUDA Toolkit** (version 12.2 or later)
 - **CMake** (version 3.10 or later)
-- **A C++ Compiler** with C++11 support
+- **g++-11** and **gcc-11**
 - **Python** (optional, for post-processing scripts)
 
 ## Compilation
 
 To compile the project, follow these steps:
 
-1. Run CMake to configure the project:
+1. Find the path to your g++-11 and gcc-11 executables. You can do this by running:
+   ```bash
+   which g++-11 # outputs something like /usr/bin/g++-11
+   which gcc-11 # outputs something like /usr/bin/gcc-11
+   ```
+
+2. Change the first 3 lines of `CMakeLists.txt` to point to your g++-11 and gcc-11 executables. For example:
+   ```cmake
+   set(CMAKE_CXX_COMPILER /path/to/your/g++-11)
+   set(CMAKE_C_COMPILER /path/to/your/gcc-11)
+   set(CMAKE_CUDA_HOST_COMPILER /path/to/your/gcc-11)
+   ```
+   **OR**
+
+   Export the following environment variables:
+   ```bash
+   export CC=/path/to/your/gcc-11
+   export CXX=/path/to/your/g++-11
+   export CUDAHOSTCXX=/path/to/your/gcc-11
+   ```
+   This program is not guaranteed to work with any other compiler version. 
+
+3. Run CMake to configure the project:
    ```bash
    cmake -Bbuild . 
    ```
 
-2. Build the project:
+4. Build the project:
    ```bash
    cmake --build build
    ```
