@@ -68,7 +68,7 @@ struct Param {
   Real m_adhesion = 0.;
   Real m_wall_repulsion = 30;
   Real packing_fraction = 0.85;
-  Real chem_strength = 0.001;
+  Real chem_strength = 1.0;
   Real chem_decay = 0.1;
   Real Dchem = 0.5;
   int Nchem = 1024;

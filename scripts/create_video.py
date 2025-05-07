@@ -306,7 +306,7 @@ def create_label_video(
     # min_y = np.min(grid_location_y_filtered)
     # min_x = np.min(grid_location_x_filtered)
 
-    N = param_df["N"].iloc[0]
+    N = param_df["gridN"].iloc[0]
     size_x = int(max_x - min_x + N)
     size_y = int(max_y - min_y + N)
     cut_size = int(N / 16)
