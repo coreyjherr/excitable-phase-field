@@ -80,7 +80,8 @@ __global__ void updateAKernel(Real* phi,
                               Real* phi_t,
                               int2* grid_location,
                               curandState* state,
-                              Real* buffer);
+                              Real* buffer,
+                              int t);
 __global__ void updateRKernel(Real* phi,
                               Real* A,
                               Real* R,
@@ -146,5 +147,6 @@ __global__ void copyToBacklogKernel(Real* d_outputs,
                                     int backlog_index);
 __global__ void copyToX(Real* tmp_com, Real2* d_com, int numCells);
 __global__ void copyToY(Real* tmp_com, Real2* d_com, int numCells);
+__forceinline__ __device__ int positive_modulus(int a, int b);
 
 #endif  // KERNELS_CUH

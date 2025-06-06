@@ -559,12 +559,13 @@ def create_chemotaxis_video(C_filename: Path, param_filename: Path):
 
 
 def create_A_video(A_filename: Path, param_filename: Path):
-    param_df = pd.read_csv(param_filename, sep="\s+", header=None)
+    param_df = pd.read_csv(param_filename, sep=r"\s*=?\s+", header=None, engine="python")
     param_df.set_index(0, inplace=True)
     param_df = param_df.T
 
-    N = int(param_df["N"].iloc[0])
-    T = int(param_df["T"].iloc[0] / 400)
+    print(param_df["gridN"].iloc[0])
+    N = int(param_df["gridN"].iloc[0])
+    T = int(param_df["T"].iloc[0] / 200)
     movie_path = A_filename.parent / "movies"
     movie_filename = str(movie_path / A_filename.with_suffix(".mp4").name)
     if not movie_path.exists():
@@ -789,7 +790,6 @@ def video_wrapper(args) -> None:
 
             print(traceback.format_exc())
             print(e)
-            return
 
     C_filename = Path(str(phi_filename).replace("phi", "C"))
     if chemotaxis and C_filename.exists():
@@ -798,6 +798,7 @@ def video_wrapper(args) -> None:
         except:
             print(f"Error creating chemotaxis video for {C_filename}")
 
+    # delete files even if there is an error creating the video
     if delete_files:
         A_filename.unlink()
         phi_filename.unlink()

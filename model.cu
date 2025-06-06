@@ -153,7 +153,9 @@ Model::Model(Param param,
 
   deviceID_ = deviceID;
   cudaErrCheck(cudaSetDevice(deviceID_));
+  std::cout << "Using device: " << deviceID_ << "\n";
   rngSeed = seed;
+  std::cout << "Using RNG seed: " << rngSeed << "\n";
 
   cudaTypes->block = dim3(blockSizeX, blockSizeY, blockSizeZ);
   cudaTypes->grid =
@@ -180,6 +182,7 @@ Model::Model(Param param,
   initializeDeviceMemory();
   initializeHostMemory();
 
+  // Helper variables for cublas
   Real* ones = new Real[N * N];
   for (int i = 0; i < N * N; ++i) {
     ones[i] = 1;
@@ -507,7 +510,7 @@ void Model::simulate(bool progressBar, bool useCondensedOutput) {
     // Early stages to stabilize the system
     updateArea();
     updateCollisionForce();
-    updatePhi(t);
+    updatePhi(0);
     if (t % 100 == 0) {
       updateGridLocation();
       if (progressBar)
@@ -544,7 +547,7 @@ void Model::simulate(bool progressBar, bool useCondensedOutput) {
 #ifdef USE_CHEMO
     updateC();
 #endif
-    updateA();
+    updateA(0);
     updateR();
   }
 }
@@ -582,10 +585,10 @@ void Model::updateC() {
       cublasRcopy(cudaTypes->handle, p.Nchem * p.Nchem, d_Cbuffer, 1, d_C, 1));
 }
 
-void Model::updateA() {
+void Model::updateA(int t) {
   updateAKernel<<<cudaTypes->grid, cudaTypes->block>>>(
       d_phi, d_A, d_R, d_Param, d_phi_t, cudaTypes->d_grid_location,
-      cudaTypes->d_states, d_buffer);
+      cudaTypes->d_states, d_buffer, t);
   cudaErrCheck(cudaGetLastError());
   cublasErrCheck(cublasRaxpy(cudaTypes->handle, numCells * N * N,
                              &(d_Param->dt), d_buffer, 1, d_A, 1));
@@ -755,31 +758,37 @@ void Model::updateCOM() {
 void Model::rollAllFieldsX() {
   rollGridXKernel<<<cudaTypes->grid, cudaTypes->block>>>(
       d_phi, d_buffer, cudaTypes->d_grid_max, d_Param);
+  cudaErrCheck(cudaGetLastError());
   cublasErrCheck(
       cublasRswap(cudaTypes->handle, numCells * N * N, d_buffer, 1, d_phi, 1));
 
   rollGridXKernel<<<cudaTypes->grid, cudaTypes->block>>>(
       d_phi, d_buffer, cudaTypes->d_grid_min, d_Param);
+  cudaErrCheck(cudaGetLastError());
   cublasErrCheck(
       cublasRswap(cudaTypes->handle, numCells * N * N, d_buffer, 1, d_phi, 1));
 
   rollGridXKernel<<<cudaTypes->grid, cudaTypes->block>>>(
       d_A, d_buffer, cudaTypes->d_grid_max, d_Param);
+  cudaErrCheck(cudaGetLastError());
   cublasErrCheck(
       cublasRswap(cudaTypes->handle, numCells * N * N, d_buffer, 1, d_A, 1));
 
   rollGridXKernel<<<cudaTypes->grid, cudaTypes->block>>>(
       d_A, d_buffer, cudaTypes->d_grid_min, d_Param);
+  cudaErrCheck(cudaGetLastError());
   cublasErrCheck(
       cublasRswap(cudaTypes->handle, numCells * N * N, d_buffer, 1, d_A, 1));
 
   rollGridXKernel<<<cudaTypes->grid, cudaTypes->block>>>(
       d_R, d_buffer, cudaTypes->d_grid_max, d_Param);
+  cudaErrCheck(cudaGetLastError());
   cublasErrCheck(
       cublasRswap(cudaTypes->handle, numCells * N * N, d_buffer, 1, d_R, 1));
 
   rollGridXKernel<<<cudaTypes->grid, cudaTypes->block>>>(
       d_R, d_buffer, cudaTypes->d_grid_min, d_Param);
+  cudaErrCheck(cudaGetLastError());
   cublasErrCheck(
       cublasRswap(cudaTypes->handle, numCells * N * N, d_buffer, 1, d_R, 1));
 }

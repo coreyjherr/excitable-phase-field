@@ -75,11 +75,10 @@ int main(int argc, char const* argv[]) {
   printParam(param0);
 
   int numSimulations = allCombinations.size();
-  int numThreads = 4;
+  int numThreads = 3;
   int numBlocks = numSimulations / numThreads + 1;
   std::cout << "Running " << numSimulations << " simulations" << std::endl;
   bool useCondensed = true;
-  unsigned long long numSeeds = 4;
 
   for (int block_index = 0; block_index < numBlocks; block_index++) {
     // create a vector of 4 threads, each thread will run a simulation
@@ -108,11 +107,15 @@ int main(int argc, char const* argv[]) {
       Param param = mapCombinationToParam(allCombinations[idx]);
       // param.alpha = param.xi * param.alpha; // scale alpha by xi
       unsigned long long seed = (unsigned long long)param.seed;
+      std::cout << "Running simulation " << idx << " with seed " << seed
+                << std::endl;
 
       threads.push_back(thread([thread_index, param, basePath, seed,
-                                useCondensed, simulationID, writeFullOutput]() {
+                                simulationID, writeFullOutput]() {
         Model model(param, thread_index, basePath, seed, simulationID,
                     writeFullOutput);
+        std::cout << thread_index << " " << basePath << " " << seed << " "
+                  << simulationID << " " << writeFullOutput << std::endl;
         bool progressBar = thread_index == 0;
         try {
           model.simulate(progressBar);
@@ -125,6 +128,7 @@ int main(int argc, char const* argv[]) {
     }
     // join all threads
     for (auto& t : threads) {
+      std::cout << "Joining thread" << t.get_id() << std::endl;
       t.join();
     }
     std::cout << "\n";
@@ -133,7 +137,7 @@ int main(int argc, char const* argv[]) {
     std::string command = "scripts/create_video.py " + basePath + " -c -d";
 #else
     std::string command =
-        "scripts/create_video.py " + basePath + " -v -d --glob " + simulationID;
+        "scripts/create_video.py " + basePath + " -v --glob " + simulationID;
 #endif
 
     int script_result = system(command.c_str());

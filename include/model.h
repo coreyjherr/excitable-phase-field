@@ -96,7 +96,7 @@ class Model {
   void updatePhi(int t);
   void updateC();
   void updateA_Area();
-  void updateA();
+  void updateA(int t);
   void updateR();
   void updateArea();
   void updateGridLocation();

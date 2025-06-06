@@ -16,6 +16,8 @@ run_phase_field
 *.npy
 *.csv
 *.toml
+*.txt
+*.pkl
 .vscode/
 scripts/
 .pre-commit-config.yaml

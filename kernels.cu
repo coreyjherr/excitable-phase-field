@@ -255,19 +255,52 @@ __global__ void updatePhiKernel(Real* phi,
                              grid_location[k].y + j - N / 2};
     Real wall_force = 0;
 #ifdef CIRCULAR_CONFINEMENT
+    // define a point source at the side of the wall
+    // Real2 point_center = {p[k].R_wall/p[0].dx, 0};
+    // Real point_radius = p[0].chem_force * (1+sin(2 * M_PI * t * p[k].dt /
+    // p[0].chem_decay)); Real thread_loc_point_dist =
+    //     sqrt((thread_loc.x - point_center.x) * (thread_loc.x -
+    //     point_center.x) +
+    //          (thread_loc.y - point_center.y) * (thread_loc.y -
+    //          point_center.y));
+    // if (thread_loc_point_dist < point_radius) {
+    //   // wall_force = p[k].m_wall_repulsion*phi_;
+    //   wall_force += p[k].m_wall_repulsion * phi_;
+    // }
+    Real R_wall_osc = p[k].R_wall;  // + p[0].chem_force * sin(2 * M_PI * t *
+                                    // p[k].dt / p[0].chem_decay);
     const Real thread_R2 =
         (thread_loc.x * thread_loc.x + thread_loc.y * thread_loc.y) * p[k].dx *
         p[k].dx;
-    if (thread_R2 > .8 * p[k].R_wall * p[k].R_wall) {
+    if (thread_R2 > .5 * p[k].R_wall * p[k].R_wall) {
       // wall_force = p[k].m_wall_repulsion*phi_;
       wall_force =
           0.5 *
-          (1 + tanh(3 * (sqrt(thread_R2) - p[k].R_wall) / sqrt(p[k].eps2))) *
+          (1 + tanh(3 * (sqrt(thread_R2) - R_wall_osc) / sqrt(p[k].eps2))) *
           p[k].m_wall_repulsion * phi_;
     }
+    // Real rod_angle = fmod(2* M_PI * t * p[k].dt / p[0].chem_decay, 2*M_PI);
+    // Real rod_length = p[k].R_wall / p[k].dx*p[0].chem_force;
+    // if (thread_loc.x * thread_loc.x + thread_loc.y * thread_loc.y <
+    //     rod_length * rod_length) {
+    //   Real thread_angle = atan2(1.0*thread_loc.y,1.0*thread_loc.x);
+    //   Real cos_angle_dif = thread_loc.x* cos(rod_angle) + thread_loc.y *
+    //   sin(rod_angle); cos_angle_dif = cos_angle_dif/sqrt(1.0*thread_loc.x *
+    //   thread_loc.x + 1.0*thread_loc.y * thread_loc.y); Real angle_dif =
+    //   acos(cos_angle_dif); if (angle_dif < M_PI / 32) {
+    //     wall_force += p[k].m_wall_repulsion * phi_;
+    //   }
+    // }
+
 #endif
 #ifdef SQUARE_CONFINEMENT
-    if (abs(thread_loc.x) > p[k].R_wall / p[k].dx ||
+    // chem_force is used to determine the wall location
+    // chem_decay is used to determine the wall period
+    int wall_x_loc =
+        (p[k].R_wall +
+         p[0].chem_force * sin(2 * M_PI * t * p[k].dt / p[0].chem_decay)) /
+        p[k].dx;
+    if (thread_loc.x < -p[k].R_wall / p[k].dx || thread_loc.x > wall_x_loc ||
         abs(thread_loc.y) > p[k].R_wall / p[k].dx) {
       wall_force = p[k].m_wall_repulsion * phi_;
     }
@@ -339,7 +372,8 @@ __global__ void updateAKernel(Real* phi,
                               Real* phi_t,
                               int2* grid_location,
                               curandState* state,
-                              Real* buffer) {
+                              Real* buffer,
+                              int t) {
   int i = blockIdx.x * blockDim.x + threadIdx.x;
   int j = blockIdx.y * blockDim.y + threadIdx.y;
   int k = blockIdx.z * blockDim.z + threadIdx.z;
@@ -355,14 +389,21 @@ __global__ void updateAKernel(Real* phi,
       Real A_x = derivativeX(A, i, j, k, p);
       Real A_y = derivativeY(A, i, j, k, p);
 
-      Real ridge_factor =
-          (grid_location[k].x + i) % 10 < 5 ? p[k].chem_strength : 1;
+      int ridge_oscillation_amplitude =
+          round(p[0].chem_force *
+                (1 + sin(2 * M_PI * t * p[k].dt / p[0].chem_decay)));
+      Real ridge_factor = positive_modulus(grid_location[k].x + i, 20) <
+                                  ridge_oscillation_amplitude
+                              ? p[k].chem_strength
+                              : 1;
+      // Real ridge_factor =
+      // (1+p[0].chem_strength*0.5*(1+sin(2*M_PI*(grid_location[k].x+i)/15)));
       // Real ridge_factor = 1;
 
       dA += p[k].D_A * laplacian(A, i, j, k, p);
       dA += p[k].D_A * (phi_x * A_x + phi_y * A_y) / phi_;
 
-      dA += (p[k].A_t - A_) * (p[k].k_a * ridge_factor * A_ * A_ /
+      dA += (p[k].A_t - A_) * (p[k].k_a / ridge_factor * A_ * A_ /
                                    (p[k].K * p[k].K + A_ * A_) +
                                p[k].b) -
             (p[k].d1 + p[k].d2 * R[idx]) * A_;
@@ -516,6 +557,8 @@ __global__ void updateCollisionForceKernel(Real* phi,
       for (int l = 0; l < k; ++l) {
         int dx = grid_locations[l].x - grid_locations[k].x;
         int dy = grid_locations[l].y - grid_locations[k].y;
+        // const Real sharp_grad_factor = 32.5;
+        const Real sharp_grad_factor = 42.5;
 
         if ((i - dx) >= 0 && (i - dx) < N && (j - dy) >= 0 && (j - dy) < N) {
           int idx_l = l * N * N + (j - dy) * N + (i - dx);
@@ -531,12 +574,12 @@ __global__ void updateCollisionForceKernel(Real* phi,
 
             collision_force[idx] +=
                 repulsion_force * phi_l +
-                adhesion_force /
-                    sqrt(1 + 32.5 * phi_lx * phi_lx + 32.5 * phi_ly * phi_ly);
+                adhesion_force / sqrt(1 + sharp_grad_factor * phi_lx * phi_lx +
+                                      sharp_grad_factor * phi_ly * phi_ly);
             collision_force[idx_l] +=
                 repulsion_force * phi_ +
-                adhesion_force /
-                    sqrt(1 + 32.5 * phi_kx * phi_kx + 32.5 * phi_ky * phi_ky);
+                adhesion_force / sqrt(1 + sharp_grad_factor * phi_kx * phi_kx +
+                                      sharp_grad_factor * phi_ky * phi_ky);
           }
         }
       }
@@ -694,4 +737,8 @@ __global__ void copyToY(Real* tmp_com, Real2* d_com, int numCells) {
   if (i < numCells) {
     d_com[i].y = tmp_com[i];
   }
+}
+
+__forceinline__ __device__ int positive_modulus(int a, int b) {
+  return (a % b + b) % b;
 }

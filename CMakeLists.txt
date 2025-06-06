@@ -38,17 +38,17 @@ set_target_properties(stochastic_phase_field PROPERTIES
 )
 
 target_link_libraries(stochastic_phase_field PRIVATE -lcublas -lcurand)
-target_compile_options(stochastic_phase_field PRIVATE -O3)
+target_compile_options(stochastic_phase_field PRIVATE -O0)
 
 # set the executable
 add_executable(run_phase_field main.cpp)
 
 target_link_libraries(run_phase_field PRIVATE stochastic_phase_field)
-target_compile_options(run_phase_field PUBLIC -O3 )
+target_compile_options(run_phase_field PUBLIC -O0 )
 
 # set compiler options for using various features of the code
 option(CHEMO "Use chemotaxis" OFF)
-option(USE_BACKLOG "Use gpu backlog for outputs" ON)
+option(USE_BACKLOG "Use gpu backlog for outputs" OFF)
 option(SQUARE_CONFINEMENT "Use square confinement" OFF)
 
 if(CHEMO)
