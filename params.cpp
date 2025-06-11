@@ -2,60 +2,12 @@
 
 #include "dependencies/toml.hpp"
 
-enum class ParamType { Int, Real };
-
-// Parameter metadata: key, pointer to member in Param
-struct ParamMeta {
-  const char* key;
-  ParamType type;
-  size_t offset;
-};
-
-#define PARAM_OFFSET(member) offsetof(Param, member)
-
-constexpr ParamMeta paramMetaList[] = {
-    {"gridN", ParamType::Int, PARAM_OFFSET(gridN)},
-    {"T", ParamType::Int, PARAM_OFFSET(T)},
-    {"blind", ParamType::Int, PARAM_OFFSET(blind)},
-    {"dt", ParamType::Real, PARAM_OFFSET(dt)},
-    {"dx", ParamType::Real, PARAM_OFFSET(dx)},
-    {"gamma", ParamType::Real, PARAM_OFFSET(gamma)},
-    {"eps2", ParamType::Real, PARAM_OFFSET(eps2)},
-    {"B_s", ParamType::Real, PARAM_OFFSET(B_s)},
-    {"xi", ParamType::Real, PARAM_OFFSET(xi)},
-    {"alpha", ParamType::Real, PARAM_OFFSET(alpha)},
-    {"k_a", ParamType::Real, PARAM_OFFSET(k_a)},
-    {"K", ParamType::Real, PARAM_OFFSET(K)},
-    {"b", ParamType::Real, PARAM_OFFSET(b)},
-    {"A_t", ParamType::Real, PARAM_OFFSET(A_t)},
-    {"d1", ParamType::Real, PARAM_OFFSET(d1)},
-    {"d2", ParamType::Real, PARAM_OFFSET(d2)},
-    {"c1", ParamType::Real, PARAM_OFFSET(c1)},
-    {"c2", ParamType::Real, PARAM_OFFSET(c2)},
-    {"tau", ParamType::Real, PARAM_OFFSET(tau)},
-    {"D_A", ParamType::Real, PARAM_OFFSET(D_A)},
-    {"D_R", ParamType::Real, PARAM_OFFSET(D_R)},
-    {"sigma", ParamType::Real, PARAM_OFFSET(sigma)},
-    {"A0", ParamType::Real, PARAM_OFFSET(A0)},
-    {"S0", ParamType::Real, PARAM_OFFSET(S0)},
-    {"r0", ParamType::Real, PARAM_OFFSET(r0)},
-    {"m_repulsion", ParamType::Real, PARAM_OFFSET(m_repulsion)},
-    {"numCells", ParamType::Int, PARAM_OFFSET(numCells)},
-    {"R_wall", ParamType::Real, PARAM_OFFSET(R_wall)},
-    {"m_adhesion", ParamType::Real, PARAM_OFFSET(m_adhesion)},
-    {"m_wall_repulsion", ParamType::Real, PARAM_OFFSET(m_wall_repulsion)},
-    {"packing_fraction", ParamType::Real, PARAM_OFFSET(packing_fraction)},
-    {"chem_strength", ParamType::Real, PARAM_OFFSET(chem_strength)},
-    {"chem_decay", ParamType::Real, PARAM_OFFSET(chem_decay)},
-    {"Dchem", ParamType::Real, PARAM_OFFSET(Dchem)},
-    {"Nchem", ParamType::Int, PARAM_OFFSET(Nchem)},
-    {"chem_force", ParamType::Real, PARAM_OFFSET(chem_force)},
-    {"delta_r", ParamType::Real, PARAM_OFFSET(delta_r)},
-    {"seed", ParamType::Int, PARAM_OFFSET(seed)}};
-
 std::vector<std::vector<Real>> loadParamsFromTOML(const std::string& filepath,
                                                   const Param& defaults) {
   std::vector<std::vector<Real>> params;
+  // Runtime check: Ensure that the sum of the sizes of all fields in
+  // paramMetaList equals sizeof(Param)
+  checkParamMetaListLayout();
 
   try {
     auto config = toml::parse_file(filepath);
@@ -186,6 +138,23 @@ bool writeParamToTOML(const Param& params, const std::string& filepath) {
   } catch (const std::exception& e) {
     std::cerr << "Error writing TOML file: " << e.what() << std::endl;
     return false;
+  }
+}
+
+inline void checkParamMetaListLayout() {
+  size_t total = 0;
+  for (size_t i = 0; i < sizeof(paramMetaList) / sizeof(ParamMeta); ++i) {
+    total +=
+        paramMetaList[i].type == ParamType::Int ? sizeof(int) : sizeof(Real);
+  }
+  if (total != sizeof(Param)) {
+    std::cerr
+        << "Error: paramMetaList does not match Param layout. "
+        << "Sum of field sizes = " << total
+        << ", sizeof(Param) = " << sizeof(Param)
+        << ". Update paramMetaList if you add/remove/reorder fields in Param."
+        << std::endl;
+    std::abort();
   }
 }
 
