@@ -159,9 +159,7 @@ std::vector<std::vector<Real>> loadParamsFromTOML(
     const std::string& filepath,
     const Param& defaults = Param());
 Param mapCombinationToParam(const std::vector<Real>& combination);
-bool writeParamToTOML(const Param& param,
-                      const std::string& filepath,
-                      unsigned long long seed);
+bool writeParamToTOML(const Param& param, const std::string& filepath);
 void printParam(const Param& param);
 
 // Function to write a Param struct to a TOML file

@@ -257,7 +257,7 @@ Model::Model(Param param,
     initializeDynamicsOutput(basePath, time_str);
   }
   if (outputType != WRITE_NONE) {
-    writeParamToTOML(p, basePath + "param_" + time_str + ".toml", rngSeed);
+    writeParamToTOML(p, basePath + "param_" + time_str + ".toml");
   }
 
   threadsNumCells = std::min(numCells, 1024);
