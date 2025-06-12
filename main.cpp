@@ -24,6 +24,7 @@ SOFTWARE
 #include <iostream>
 #include <vector>
 
+#include "dependencies/cxxopts.hpp"
 #include "dependencies/indicators.hpp"
 #include "include/model.h"
 #include "include/params.hpp"
@@ -32,33 +33,46 @@ using std::vector;
 using std::thread;
 
 int main(int argc, char const* argv[]) {
-  if (argc > 4 || argc < 2) {
-    std::cout << "Usage: ./run_phase_field config.toml [storage_location] "
-                 "[fullOutput]"
-              << std::endl;
+  // Use cxxopts for command line parsing
+  cxxopts::Options options("run_phase_field",
+                           "Stochastic phase field simulation");
+  options.add_options()("c,config", "TOML config file",
+                        cxxopts::value<std::string>())(
+      "s,storage", "Storage location (default: ./results/)",
+      cxxopts::value<std::string>()->default_value("./results/"))(
+      "o,output",
+      "Output mode (0: none, 1: full, 2: condensed, 3: dynamics, 4: "
+      "parameters)",
+      cxxopts::value<int>()->default_value("1"))("k,keep",
+                                                 "Keep intermediate files")(
+      "g,gpuids", "GPU IDs to use",
+      cxxopts::value<std::vector<int>>()->default_value("0,1,2"))("h,help",
+                                                                  "Print help");
+
+  options.parse_positional({"config", "storage", "output"});
+  auto result = options.parse(argc, argv);
+
+  if (result.count("help") || argc < 2) {
+    std::cout << options.help() << std::endl;
+    return 0;
+  }
+
+  if (!result.count("config")) {
+    std::cerr << "Error: config file is required." << std::endl;
     return 1;
   }
-  std::string configFilePath = argv[1];
-  std::string basePath = "./results/";
-  int writeFullOutput = 1;
-  if (argc >= 3) {
-    basePath = argv[2];
-    if (basePath.back() != '/')
-      basePath += '/';
-  }
-  if (argc >= 4) {
-    std::string fullOutputArg = argv[3];
-    if (std::stoi(fullOutputArg) == WRITE_FULL_OUTPUT)
-      writeFullOutput = WRITE_FULL_OUTPUT;
-    else if (std::stoi(fullOutputArg) == WRITE_CONDENSED_OUTPUT)
-      writeFullOutput = WRITE_CONDENSED_OUTPUT;
-    else if (std::stoi(fullOutputArg) == WRITE_DYNAMICS_OUTPUT)
-      writeFullOutput = WRITE_DYNAMICS_OUTPUT;
-    else if (std::stoi(fullOutputArg) == WRITE_PARAMETERS_OUTPUT)
-      writeFullOutput = WRITE_PARAMETERS_OUTPUT;
-    else
-      writeFullOutput = WRITE_NONE;
-  }
+
+  std::string configFilePath = result["config"].as<std::string>();
+  std::string basePath = result["storage"].as<std::string>();
+  int writeFullOutput = result["output"].as<int>();
+
+  // check that the number of threads is equal to the length of the gpuids
+  // vector
+  std::vector<int> gpuids = result["gpuids"].as<std::vector<int>>();
+  int numThreads = gpuids.size();
+
+  if (basePath.back() != '/')
+    basePath += '/';
 
   std::cout << basePath << std::endl;
 
@@ -75,7 +89,6 @@ int main(int argc, char const* argv[]) {
   printParam(param0);
 
   int numSimulations = allCombinations.size();
-  int numThreads = 3;
   int numBlocks = numSimulations / numThreads + 1;
   std::cout << "Running " << numSimulations << " simulations" << std::endl;
   bool useCondensed = true;
@@ -105,26 +118,24 @@ int main(int argc, char const* argv[]) {
         break;
 
       Param param = mapCombinationToParam(allCombinations[idx]);
-      // param.alpha = param.xi * param.alpha; // scale alpha by xi
       unsigned long long seed = (unsigned long long)param.seed;
-      std::cout << "Running simulation " << idx << " with seed " << seed
-                << std::endl;
+      int deviceID = gpuids[thread_index];
 
-      threads.push_back(thread([thread_index, param, basePath, seed,
-                                simulationID, writeFullOutput]() {
-        Model model(param, thread_index, basePath, seed, simulationID,
-                    writeFullOutput);
-        std::cout << thread_index << " " << basePath << " " << seed << " "
-                  << simulationID << " " << writeFullOutput << std::endl;
-        bool progressBar = thread_index == 0;
-        try {
-          model.simulate(progressBar);
-        } catch (const std::system_error& e) {
-          throw e;
-        } catch (const std::runtime_error& e) {
-          std::cerr << "Caught exception: " << e.what() << std::endl;
-        }
-      }));
+      threads.push_back(thread(
+          [deviceID, param, basePath, seed, simulationID, writeFullOutput]() {
+            Model model(param, deviceID, basePath, seed, simulationID,
+                        writeFullOutput);
+            std::cout << deviceID << " " << basePath << " " << seed << " "
+                      << simulationID << " " << writeFullOutput << std::endl;
+            bool progressBar = deviceID == 0;
+            try {
+              model.simulate(progressBar);
+            } catch (const std::system_error& e) {
+              throw e;
+            } catch (const std::runtime_error& e) {
+              std::cerr << "Caught exception: " << e.what() << std::endl;
+            }
+          }));
     }
     // join all threads
     for (auto& t : threads) {
@@ -138,6 +149,8 @@ int main(int argc, char const* argv[]) {
 #else
     std::string command =
         "scripts/create_video.py " + basePath + " -v --glob " + simulationID;
+    if (!result["keep"].as<bool>())
+      command += " -d";
 #endif
 
     int script_result = system(command.c_str());
