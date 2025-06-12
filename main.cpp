@@ -24,7 +24,7 @@ SOFTWARE
 #include <iostream>
 #include <vector>
 
-#include "dependencies/cxxopts.hpp"
+#include "dependencies/CLI11.hpp"
 #include "dependencies/indicators.hpp"
 #include "include/model.h"
 #include "include/params.hpp"
@@ -33,42 +33,35 @@ using std::vector;
 using std::thread;
 
 int main(int argc, char const* argv[]) {
-  // Use cxxopts for command line parsing
-  cxxopts::Options options("run_phase_field",
-                           "Stochastic phase field simulation");
-  options.add_options()("c,config", "TOML config file",
-                        cxxopts::value<std::string>())(
-      "s,storage", "Storage location (default: ./results/)",
-      cxxopts::value<std::string>()->default_value("./results/"))(
-      "o,output",
-      "Output mode (0: none, 1: full, 2: condensed, 3: dynamics, 4: "
-      "parameters)",
-      cxxopts::value<int>()->default_value("1"))("k,keep",
-                                                 "Keep intermediate files")(
-      "g,gpuids", "GPU IDs to use",
-      cxxopts::value<std::vector<int>>()->default_value("0,1,2"))("h,help",
-                                                                  "Print help");
+  // Use CLI11 for command line parsing
+  CLI::App app{"Stochastic phase field simulation"};
 
-  options.parse_positional({"config", "storage", "output"});
-  auto result = options.parse(argc, argv);
+  std::string configFilePath;
+  std::string basePath = "./results/";
+  int writeFullOutput = 1;
+  bool keep = false;
+  std::vector<int> gpuids{0, 1, 2};
 
-  if (result.count("help") || argc < 2) {
-    std::cout << options.help() << std::endl;
-    return 0;
-  }
+  // Add options
+  app.add_option("config,-c,--config", configFilePath, "TOML config file")
+      ->required();
+  app.add_option("storage,-s,--storage", basePath,
+                 "Storage location (default: ./results/)")
+      ->default_val("./results/");
+  app.add_option("output,-o,--output", writeFullOutput,
+                 "Output mode (0: none, 1: full, 2: condensed, 3: dynamics, 4: "
+                 "parameters)")
+      ->default_val("1");
+  app.add_flag("-k,--keep", keep, "Keep intermediate files");
+  app.add_option("-g,--gpuids", gpuids, "GPU IDs to use")
+      ->delimiter(',')
+      ->default_val("0,1,2");
 
-  if (!result.count("config")) {
-    std::cerr << "Error: config file is required." << std::endl;
-    return 1;
-  }
+  app.set_help_all_flag("--help-all", "Show all help");
 
-  std::string configFilePath = result["config"].as<std::string>();
-  std::string basePath = result["storage"].as<std::string>();
-  int writeFullOutput = result["output"].as<int>();
+  // Parse command line
+  CLI11_PARSE(app, argc, argv);
 
-  // check that the number of threads is equal to the length of the gpuids
-  // vector
-  std::vector<int> gpuids = result["gpuids"].as<std::vector<int>>();
   int numThreads = gpuids.size();
 
   if (basePath.back() != '/')
@@ -149,7 +142,7 @@ int main(int argc, char const* argv[]) {
 #else
     std::string command =
         "scripts/create_video.py " + basePath + " -v --glob " + simulationID;
-    if (!result["keep"].as<bool>())
+    if (!keep)
       command += " -d";
 #endif
 
