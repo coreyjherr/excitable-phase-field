@@ -596,7 +596,7 @@ __global__ void setupCurandStates(curandState* state,
   int j = blockIdx.y * blockDim.y + threadIdx.y;
   int k = blockIdx.z * blockDim.z + threadIdx.z;
 
-  if (i < N && j < N && k < p[k].numCells) {
+  if (i < N && j < N && k < p[0].numCells) {
     int idx = k * N * N + j * N + i;
     curand_init(seed, idx + offset, 0, &state[idx]);
   }

@@ -129,11 +129,21 @@ constexpr ParamMeta paramMetaList[] = {
     {"seed", ParamType::Int, PARAM_OFFSET(seed)}};
 
 // Compile-time check: paramMetaList must have exactly as many entries as there
-// are fields in Param
+// are fields in Param. If float is used than int and Real are the same size,
+// so we can get deterministic behavior. If double is used, then we need to
+// allow for more entries in paramMetaList than fields in Param, since some
+// fields may be Real and some may be int
+#ifdef USE_FLOAT
 static_assert(
-    sizeof(paramMetaList) >= sizeof(Param) / sizeof(Real),
+    sizeof(paramMetaList) / sizeof(ParamMeta) == sizeof(Param) / sizeof(Real),
     "paramMetaList must have exactly as many entries as Param has fields. "
     "Update paramMetaList and PARAM_FIELD_COUNT if you add fields to Param.");
+#else
+static_assert(
+    sizeof(paramMetaList) / sizeof(ParamMeta) >= sizeof(Param) / sizeof(Real),
+    "paramMetaList must have exactly as many entries as Param has fields. "
+    "Update paramMetaList and PARAM_FIELD_COUNT if you add fields to Param.");
+#endif
 
 inline std::vector<Real> range(Real start, Real stop, Real step) {
   std::vector<Real> result;
