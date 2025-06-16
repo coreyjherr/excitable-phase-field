@@ -114,21 +114,21 @@ int main(int argc, char const* argv[]) {
       unsigned long long seed = (unsigned long long)param.seed;
       int deviceID = gpuids[thread_index];
 
-      threads.push_back(thread(
-          [deviceID, param, basePath, seed, simulationID, writeFullOutput]() {
-            Model model(param, deviceID, basePath, seed, simulationID,
-                        writeFullOutput);
-            std::cout << deviceID << " " << basePath << " " << seed << " "
-                      << simulationID << " " << writeFullOutput << std::endl;
-            bool progressBar = deviceID == 0;
-            try {
-              model.simulate(progressBar);
-            } catch (const std::system_error& e) {
-              throw e;
-            } catch (const std::runtime_error& e) {
-              std::cerr << "Caught exception: " << e.what() << std::endl;
-            }
-          }));
+      threads.push_back(thread([thread_index, deviceID, param, basePath, seed,
+                                simulationID, writeFullOutput]() {
+        Model model(param, deviceID, basePath, seed, simulationID,
+                    writeFullOutput);
+        std::cout << deviceID << " " << basePath << " " << seed << " "
+                  << simulationID << " " << writeFullOutput << std::endl;
+        bool progressBar = thread_index == 0;
+        try {
+          model.simulate(progressBar);
+        } catch (const std::system_error& e) {
+          throw e;
+        } catch (const std::runtime_error& e) {
+          std::cerr << "Caught exception: " << e.what() << std::endl;
+        }
+      }));
     }
     // join all threads
     for (auto& t : threads) {

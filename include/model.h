@@ -35,11 +35,10 @@ SOFTWARE
 #define WRITE_PARAMETERS_OUTPUT 3
 #define WRITE_NONE 4
 
-typedef int WriteError;
+struct CudaTypes;
 
 class Model {
  private:
-  struct CudaTypes;
   CudaTypes* cudaTypes;
 
   Real *d_ones, *d_beta, *d_alpha;
@@ -76,7 +75,6 @@ class Model {
   void preallocateOutput(std::string filePath, size_t fileSize);
   void deleteOutput();
   void initializeDynamicsOutput(std::string basePath, std::string time_str);
-  void copyToBacklog(int step, int backlog_index);
   bool writeFullOutput_;
   bool writeCondensedOutput_;
   bool writeDynamicsOutput_;
@@ -111,10 +109,10 @@ class Model {
   void writeDynamics(int step);
   void writeInBackground(bool useCondensedOutput = false);
   void updateCOM();
-  WriteError makeCondensedOutput(Real* field1,
-                                 Real* field2,
-                                 std::ofstream& outputField,
-                                 bool overwriteFlag = false);
+  void makeCondensedOutput(Real* field1,
+                           Real* field2,
+                           std::ofstream& outputField,
+                           bool overwriteFlag = false);
   std::string simulationID;
 };
 
