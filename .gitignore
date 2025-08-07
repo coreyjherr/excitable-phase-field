@@ -20,4 +20,3 @@ run_phase_field
 *.pkl
 .vscode/
 scripts/
-.pre-commit-config.yaml
