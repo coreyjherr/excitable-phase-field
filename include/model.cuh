@@ -11,7 +11,7 @@
 struct CudaTypes {
   curandState *d_states, *d_Rstates;
   int2 *d_grid_location, *grid_location, *d_grid_min, *d_grid_max;
-  Real2 *com, *d_com, *comA, *d_comA;
+  Real2 *com, *d_com, *comA, *d_comA, *d_division_axes, *division_axes;
   cublasHandle_t handle;
   dim3 grid, block, Cblocks, Cthreads_per_block;
 };

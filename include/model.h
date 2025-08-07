@@ -27,6 +27,7 @@ SOFTWARE
 #include <mutex>
 #include <vector>
 
+#include "kernels.cuh"
 #include "params.hpp"
 
 #define WRITE_FULL_OUTPUT 0
@@ -41,7 +42,7 @@ class Model {
  private:
   CudaTypes* cudaTypes;
 
-  Real *d_ones, *d_beta, *d_alpha;
+  Real *d_ones, *d_zero, *d_one;
 
   int blockSizeX = 16;
   int blockSizeY = 16;
@@ -53,10 +54,13 @@ class Model {
   Real *d_A, *d_R, *d_C, *d_area, *d_Aarea, *d_collision_force, *d_buffer,
       *d_phi_t, *d_Cbuffer;
 
+  Real *time_since_division, *d_time_since_division;
+  int *new_cell_indices, *d_new_cell_indices;
+
   Param p;
   Param* d_Param;
 
-  int numCells, deviceID_;
+  int currentNumCells, deviceID_;
 
   std::ofstream phi_output, A_output, label_output, C_output;
   std::ofstream dynamics_output;
@@ -70,7 +74,7 @@ class Model {
 
   void rollAllFieldsX();
   void rollAllFieldsY();
-  void initializeCellGrid(Real totalArea);
+  void initializeCellGrid(Real totalArea, const std::string& boundaryType);
   void initializeOutput(std::string basePath, std::string time_str);
   void preallocateOutput(std::string filePath, size_t fileSize);
   void deleteOutput();
@@ -80,6 +84,10 @@ class Model {
   bool writeDynamicsOutput_;
   std::string phi_filename, A_filename, label_filename, C_filename;
 
+  // Add boundary condition function pointer
+  BoundaryConditionFunc boundary_condition_func_;
+  void setBoundaryConditionFunc(const std::string& type);
+
  public:
   unsigned long long rngSeed;
   Real* d_phi;
@@ -88,7 +96,8 @@ class Model {
         std::string basePath = "./results/",
         unsigned long long seed = 0,
         std::string simulationID = "",
-        int outputType = WRITE_CONDENSED_OUTPUT);
+        int outputType = WRITE_CONDENSED_OUTPUT,
+        std::string boundaryType = "circular");
   ~Model();
   void simulate(bool progressBar = true, bool useCondensedOutput = false);
   void updatePhi(int t);
@@ -113,6 +122,7 @@ class Model {
                            Real* field2,
                            std::ofstream& outputField,
                            bool overwriteFlag = false);
+  void updateCellDivisions();
   std::string simulationID;
 };
 

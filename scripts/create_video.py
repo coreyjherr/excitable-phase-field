@@ -1,4 +1,4 @@
-#!/home/cherr/miniconda3/envs/opencv/bin/python
+#!/home/cyh5161/miniconda3/envs/opencv/bin/python
 # %%
 import numpy as np
 import matplotlib.pyplot as plt
@@ -11,6 +11,7 @@ from matplotlib.cm import ScalarMappable
 import seaborn as sns
 from scipy.ndimage import center_of_mass
 
+
 def read_dynamics_file(filename: Path | str) -> pd.DataFrame:
     # open the file and read the first int to get the number of columns
     if isinstance(filename, str):
@@ -20,13 +21,13 @@ def read_dynamics_file(filename: Path | str) -> pd.DataFrame:
 
     if filename.suffix == ".dat":
         num_columns, real_width_bytes = np.fromfile(filename, dtype=np.float32, count=2)
-        file_size_bytes = int(filename.stat().st_size)
         real_width_bytes = int(real_width_bytes)
         num_columns = int(num_columns)
-        num_rows = int(
-            (file_size_bytes - 2 * real_width_bytes) // (num_columns * real_width_bytes)
-        )
+        dtype = np.float32 if real_width_bytes == 4 else np.float64
+        file_size_bytes = int(filename.stat().st_size)
+        offset = 2 * real_width_bytes
 
+        rows = []
         column_names = [
             "cell",
             "t",
@@ -39,16 +40,29 @@ def read_dynamics_file(filename: Path | str) -> pd.DataFrame:
             "comA_x",
             "comA_y",
         ]
-        dtype = np.float32 if real_width_bytes == 4 else np.float64
-        data = np.fromfile(
-            filename,
-            dtype=dtype,
-            count=int(num_columns * num_rows),
-            offset=2 * real_width_bytes,
-        )
-        df = pd.DataFrame(
-            data.reshape(int(num_rows), int(num_columns)), columns=column_names
-        )
+        while offset < file_size_bytes:
+            # Read the number of cells for this step
+            num_cells = np.fromfile(filename, dtype=dtype, count=1, offset=offset)[0]
+            num_cells = int(num_cells)
+            offset += real_width_bytes
+            # Read the data for this step
+            data = np.fromfile(
+                filename,
+                dtype=dtype,
+                count=num_cells * num_columns,
+                offset=offset,
+            )
+            if data.size != num_cells * num_columns:
+                break
+            data = data.reshape(num_cells, num_columns)
+            # Add the step's data to the list
+            rows.append(data)
+            offset += num_cells * num_columns * real_width_bytes
+
+        if not rows:
+            return pd.DataFrame(columns=column_names)
+        all_data = np.vstack(rows)
+        df = pd.DataFrame(all_data, columns=column_names)
         df["com_x"] = df["com_x"] + df["grid_offset_x"]
         df["com_y"] = df["com_y"] + df["grid_offset_y"]
         df["comA_x"] = df["comA_x"] + df["grid_offset_x"]
@@ -271,35 +285,36 @@ def create_label_video(
     param_df.set_index(0, inplace=True)
     param_df = param_df.T
 
-    numCells = int(param_df["numCells"].iloc[0])
+    numCells = int(param_df["numCellsInitial"].iloc[0])
     # T = param_df['T'].iloc[0]/param_df['blind'].iloc[0]
     # step between frames is defined to 400
     T = param_df["T"].iloc[0] / 400
     T = int(T)
-    skip_num = int(400 / param_df["blind"].iloc[0])
+    skip_t = 400
+    skip_num = int(skip_t / param_df["blind"].iloc[0])
     num_rows = param_df["T"].iloc[0] / param_df["blind"].iloc[0] * numCells
 
     df = read_dynamics_file(dynamics_filename)
     R_cutoff = 500
 
     # get the grid locations reshaped to be numCells x T x 2
-    grid_location_x = df.pivot_table(
+    grid_location_x = df.query('t % @skip_t == 0').pivot_table(
         index="cell", columns="t", values="grid_offset_x"
     ).to_numpy()
-    grid_location_y = df.pivot_table(
+    grid_location_y = df.query('t % @skip_t == 0').pivot_table(
         index="cell", columns="t", values="grid_offset_y"
     ).to_numpy()
     location_filter = np.logical_and(
         np.abs(grid_location_x) < R_cutoff, np.abs(grid_location_y) < R_cutoff
     )
     directions = np.stack([grid_location_x, grid_location_y], axis=-1)
-    directions = directions.astype(np.int32)[:, ::skip_num, :]
-    print(directions.shape)
+    print(directions)
 
-    max_y = np.max(directions[:, :, 1])
-    max_x = np.max(directions[:, :, 0])
-    min_y = np.min(directions[:, :, 1])
-    min_x = np.min(directions[:, :, 0])
+    max_y = int(np.nanmax(directions[:, :, 1]))
+    max_x = int(np.nanmax(directions[:, :, 0]))
+    min_y = int(np.nanmin(directions[:, :, 1]))
+    min_x = int(np.nanmin(directions[:, :, 0]))
+    print(max_x, min_x, max_y, min_y)
 
     # max_y = np.max(grid_location_y_filtered)
     # max_x = np.max(grid_location_x_filtered)
@@ -368,8 +383,8 @@ def create_label_video(
         )
         current_position += 8
 
-        current_min_x = np.min(directions[:, i, 0]) - min_x
-        current_min_y = np.min(directions[:, i, 1]) - min_y
+        current_min_x = int(np.nanmin(directions[:, i, 0]) - min_x)
+        current_min_y = int(np.nanmin(directions[:, i, 1]) - min_y)
 
         try:
             label = (
@@ -438,10 +453,14 @@ def create_label_video(
                 np.ones_like(angle_image) * background_color,
                 mask=1 - phi,
             )
-            frame[
-                current_min_x : current_min_x + current_size[0],
-                current_min_y : current_min_y + current_size[1],
-            ] = angle_image
+            try:
+                frame[
+                    current_min_x : current_min_x + current_size[0],
+                    current_min_y : current_min_y + current_size[1],
+                ] = angle_image
+            except Exception as e:
+                print(angle_image.shape, current_min_x, current_min_y, current_size)
+                raise e
 
         elif ~make_angle_image:
             A = (A * 255).astype(np.uint8)
@@ -601,7 +620,7 @@ def create_label_video_from_uncompressed(
     param_df.set_index(0, inplace=True)
     param_df = param_df.T
 
-    numCells = int(param_df["numCells"].iloc[0])
+    numCells = int(param_df["numCellsInitial"].iloc[0])
     # T = param_df['T'].iloc[0]/param_df['blind'].iloc[0]
     # step between frames is defined to 400
     T = param_df["T"].iloc[0] / 400

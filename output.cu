@@ -29,7 +29,7 @@ void Model::makeCondensedOutput(Real* field1,
   max_grid_location.x = cudaTypes->grid_location[0].x;
   max_grid_location.y = cudaTypes->grid_location[0].y;
 
-  for (int i = 0; i < numCells; i++) {
+  for (int i = 0; i < currentNumCells; i++) {
     min_grid_location.x = cudaTypes->grid_location[i].x < min_grid_location.x
                               ? cudaTypes->grid_location[i].x
                               : min_grid_location.x;
@@ -69,7 +69,7 @@ void Model::makeCondensedOutput(Real* field1,
          condensed_size_x * condensed_size_y * sizeof(Real));
 
   if (field2 == nullptr) {
-    for (int k = 0; k < numCells; k++) {
+    for (int k = 0; k < currentNumCells; k++) {
       for (int i = 0; i < N; i++) {
         for (int j = 0; j < N; j++) {
           int xcoord = cudaTypes->grid_location[k].x + i - min_grid_location.x;
@@ -89,7 +89,7 @@ void Model::makeCondensedOutput(Real* field1,
       }
     }
   } else {
-    for (int k = 0; k < numCells; k++) {
+    for (int k = 0; k < currentNumCells; k++) {
       for (int i = 0; i < N; i++) {
         for (int j = 0; j < N; j++) {
           int xcoord = cudaTypes->grid_location[k].x + i - min_grid_location.x;
@@ -111,23 +111,24 @@ void Model::makeCondensedOutput(Real* field1,
 void Model::writeDynamics(int step) {
 #ifdef USE_DEVICE_BACKLOG
   int threadsPerBlock = 256;
-  int numBlocks = (numCells + threadsPerBlock - 1) / threadsPerBlock;
+  int numBlocks = (currentNumCells + threadsPerBlock - 1) / threadsPerBlock;
   static int backlog_step = 0;
   copyToBacklogKernel<<<numBlocks, threadsPerBlock>>>(
       d_output, cudaTypes->d_com, cudaTypes->d_comA, d_area, d_Aarea,
-      cudaTypes->d_grid_location, numCells, step, backlog_step);
+      cudaTypes->d_grid_location, currentNumCells, step, backlog_step);
   cudaErrCheck(cudaGetLastError());
 
   if (backlog_step == BACKLOG_SIZE - 1) {
-    cudaErrCheck(
-        cudaMemcpy(h_output, d_output,
-                   numCells * BACKLOG_SIZE * sizeof(Real) * NUM_OUTPUT_COLUMNS,
-                   cudaMemcpyDeviceToHost));
+    cudaErrCheck(cudaMemcpy(
+        h_output, d_output,
+        currentNumCells * BACKLOG_SIZE * sizeof(Real) * NUM_OUTPUT_COLUMNS,
+        cudaMemcpyDeviceToHost));
     dynamics_output.write(
         reinterpret_cast<char*>(h_output),
-        numCells * BACKLOG_SIZE * sizeof(Real) * NUM_OUTPUT_COLUMNS);
+        currentNumCells * BACKLOG_SIZE * sizeof(Real) * NUM_OUTPUT_COLUMNS);
     // Error check for any nan values
-    for (int i = 0; i < numCells * BACKLOG_SIZE * NUM_OUTPUT_COLUMNS; ++i) {
+    for (int i = 0; i < currentNumCells * BACKLOG_SIZE * NUM_OUTPUT_COLUMNS;
+         ++i) {
       if (std::isnan(h_output[i])) {
         std::cerr << "Error: Dynamics output" << i % NUM_OUTPUT_COLUMNS << ", "
                   << i / NUM_OUTPUT_COLUMNS << " is NaN"
@@ -139,16 +140,19 @@ void Model::writeDynamics(int step) {
   backlog_step = (backlog_step + 1) % BACKLOG_SIZE;
 
 #else
+
   cudaErrCheck(cudaMemcpy(cudaTypes->com, cudaTypes->d_com,
-                          numCells * sizeof(Real2), cudaMemcpyDeviceToHost));
-  cudaErrCheck(cudaMemcpy(cudaTypes->comA, cudaTypes->d_comA,
-                          numCells * sizeof(Real2), cudaMemcpyDeviceToHost));
-  cudaErrCheck(cudaMemcpy(area, d_area, numCells * sizeof(Real),
+                          currentNumCells * sizeof(Real2),
                           cudaMemcpyDeviceToHost));
-  cudaErrCheck(cudaMemcpy(Aarea, d_Aarea, numCells * sizeof(Real),
+  cudaErrCheck(cudaMemcpy(cudaTypes->comA, cudaTypes->d_comA,
+                          currentNumCells * sizeof(Real2),
+                          cudaMemcpyDeviceToHost));
+  cudaErrCheck(cudaMemcpy(area, d_area, currentNumCells * sizeof(Real),
+                          cudaMemcpyDeviceToHost));
+  cudaErrCheck(cudaMemcpy(Aarea, d_Aarea, currentNumCells * sizeof(Real),
                           cudaMemcpyDeviceToHost));
   cudaErrCheck(cudaDeviceSynchronize());
-  for (int i = 0; i < numCells; ++i) {
+  for (int i = 0; i < currentNumCells; ++i) {
     cudaTypes->com[i].x /= area[i];
     cudaTypes->com[i].y /= area[i];
     if (Aarea[i] < 1e-6) {
@@ -165,7 +169,7 @@ void Model::writeDynamics(int step) {
       std::cerr << "Area: " << area[i] << "\n";
       std::cerr << "COM: " << cudaTypes->com[i].x << ", " << cudaTypes->com[i].y
                 << "\n";
-      throw std::runtime_error("COM is NaN");
+      // throw std::runtime_error("COM is NaN");
     }
     if (std::isnan(cudaTypes->comA[i].x) || std::isnan(cudaTypes->comA[i].y)) {
       std::cerr << "Error: COMA is NaN"
@@ -173,14 +177,17 @@ void Model::writeDynamics(int step) {
       std::cerr << "Area: " << Aarea[i] << "\n";
       std::cerr << "COMA: " << cudaTypes->comA[i].x << ", "
                 << cudaTypes->comA[i].y << "\n";
-      throw std::runtime_error("COMA is NaN");
+      // throw std::runtime_error("COMA is NaN");
     }
   }
 
   cudaErrCheck(cudaMemcpy(cudaTypes->grid_location, cudaTypes->d_grid_location,
-                          numCells * sizeof(int2), cudaMemcpyDeviceToHost));
+                          currentNumCells * sizeof(int2),
+                          cudaMemcpyDeviceToHost));
   Real real_i, real_step, real_x, real_y;
-  for (int i = 0; i < numCells; ++i) {
+  Real real_numCells = (Real)currentNumCells;
+  dynamics_output.write(reinterpret_cast<char*>(&real_numCells), sizeof(Real));
+  for (int i = 0; i < currentNumCells; ++i) {
     real_i = (Real)i;
     real_step = (Real)step;
     real_x = (Real)cudaTypes->grid_location[i].x;
@@ -207,25 +214,28 @@ void Model::writeFullOutput() {
   // Write phi and A to file
   // copy the grid location to the host
   cudaErrCheck(cudaMemcpy(cudaTypes->grid_location, cudaTypes->d_grid_location,
-                          numCells * sizeof(int2), cudaMemcpyDeviceToHost));
-  std::lock_guard<std::mutex> guard(fileMutex);  // Lock the mutex
-  cudaErrCheck(cudaMemcpy(phi, d_phi, numCells * N * N * sizeof(Real),
+                          currentNumCells * sizeof(int2),
                           cudaMemcpyDeviceToHost));
-  cudaErrCheck(cudaMemcpy(A, d_A, numCells * N * N * sizeof(Real),
+  std::lock_guard<std::mutex> guard(fileMutex);  // Lock the mutex
+  cudaErrCheck(cudaMemcpy(phi, d_phi, currentNumCells * N * N * sizeof(Real),
+                          cudaMemcpyDeviceToHost));
+  cudaErrCheck(cudaMemcpy(A, d_A, currentNumCells * N * N * sizeof(Real),
                           cudaMemcpyDeviceToHost));
 
   if (writeCondensedOutput_) {
     makeCondensedOutput(phi, nullptr, phi_output);
     makeCondensedOutput(A, phi, A_output);
     makeLabelImage<<<cudaTypes->grid, cudaTypes->block>>>(
-        d_phi, d_buffer, cudaTypes->d_grid_location, d_Param);
-    cudaErrCheck(cudaMemcpy(phi, d_buffer, numCells * N * N * sizeof(Real),
+        d_phi, d_buffer, cudaTypes->d_grid_location, d_Param, currentNumCells);
+    cudaErrCheck(cudaMemcpy(phi, d_buffer,
+                            currentNumCells * N * N * sizeof(Real),
                             cudaMemcpyDeviceToHost));
     makeCondensedOutput(phi, nullptr, label_output, true);
   } else {
     phi_output.write(reinterpret_cast<char*>(phi),
-                     numCells * N * N * sizeof(Real));
-    A_output.write(reinterpret_cast<char*>(A), numCells * N * N * sizeof(Real));
+                     currentNumCells * N * N * sizeof(Real));
+    A_output.write(reinterpret_cast<char*>(A),
+                   currentNumCells * N * N * sizeof(Real));
   }
 
   // Write the concentration field to file

@@ -62,7 +62,9 @@ struct Param {
   Real S0 = 114;
   Real r0 = 6;
   Real m_repulsion = 30;
-  int numCells = 1;
+  int numCellsInitial = 1;
+  int maxCells = 2048;
+  Real division_time = 100;
 
   Real R_wall = 0.;
   Real m_adhesion = 0.;
@@ -115,7 +117,9 @@ constexpr ParamMeta paramMetaList[] = {
     {"S0", ParamType::Real, PARAM_OFFSET(S0)},
     {"r0", ParamType::Real, PARAM_OFFSET(r0)},
     {"m_repulsion", ParamType::Real, PARAM_OFFSET(m_repulsion)},
-    {"numCells", ParamType::Int, PARAM_OFFSET(numCells)},
+    {"numCellsInitial", ParamType::Int, PARAM_OFFSET(numCellsInitial)},
+    {"maxCells", ParamType::Int, PARAM_OFFSET(maxCells)},
+    {"division_time", ParamType::Real, PARAM_OFFSET(division_time)},
     {"R_wall", ParamType::Real, PARAM_OFFSET(R_wall)},
     {"m_adhesion", ParamType::Real, PARAM_OFFSET(m_adhesion)},
     {"m_wall_repulsion", ParamType::Real, PARAM_OFFSET(m_wall_repulsion)},

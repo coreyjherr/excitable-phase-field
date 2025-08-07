@@ -185,7 +185,7 @@ void printParam(const Param& param) {
   std::cout << "S0 " << param.S0 << std::endl;
   std::cout << "r0 " << param.r0 << std::endl;
   std::cout << "m_repulsion " << param.m_repulsion << std::endl;
-  std::cout << "numCells " << param.numCells << std::endl;
+  std::cout << "numCells " << param.numCellsInitial << std::endl;
   std::cout << "R_wall " << param.R_wall << std::endl;
   std::cout << "m_adhesion " << param.m_adhesion << std::endl;
   std::cout << "m_wall_repulsion " << param.m_wall_repulsion << std::endl;

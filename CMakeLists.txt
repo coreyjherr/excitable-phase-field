@@ -35,7 +35,7 @@ add_library(stochastic_phase_field STATIC ${SOURCES})
 
 set_target_properties(stochastic_phase_field PROPERTIES
     CUDA_SEPARABLE_COMPILATION ON
-    CUDA_ARCHITECTURES 75
+    CUDA_ARCHITECTURES 89
 )
 
 target_link_libraries(stochastic_phase_field PRIVATE -lcublas -lcurand)

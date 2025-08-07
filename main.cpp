@@ -41,6 +41,7 @@ int main(int argc, char const* argv[]) {
   int writeFullOutput = 1;
   bool keep = false;
   std::vector<int> gpuids{0, 1, 2};
+  std::string boundaryType = "circular";  // default
 
   // Add options
   app.add_option("config,-c,--config", configFilePath, "TOML config file")
@@ -56,6 +57,10 @@ int main(int argc, char const* argv[]) {
   app.add_option("-g,--gpuids", gpuids, "GPU IDs to use")
       ->delimiter(',')
       ->default_val("0,1,2");
+  app.add_option("--boundary", boundaryType,
+                 "Boundary type: 'circular' or 'square'")
+      ->check(CLI::IsMember({"circular", "square"}))
+      ->default_val("circular");
 
   app.set_help_all_flag("--help-all", "Show all help");
 
@@ -84,7 +89,6 @@ int main(int argc, char const* argv[]) {
   int numSimulations = allCombinations.size();
   int numBlocks = numSimulations / numThreads + 1;
   std::cout << "Running " << numSimulations << " simulations" << std::endl;
-  bool useCondensed = true;
 
   for (int block_index = 0; block_index < numBlocks; block_index++) {
     // create a vector of 4 threads, each thread will run a simulation
@@ -115,11 +119,12 @@ int main(int argc, char const* argv[]) {
       int deviceID = gpuids[thread_index];
 
       threads.push_back(thread([thread_index, deviceID, param, basePath, seed,
-                                simulationID, writeFullOutput]() {
+                                simulationID, writeFullOutput, boundaryType]() {
         Model model(param, deviceID, basePath, seed, simulationID,
-                    writeFullOutput);
+                    writeFullOutput, boundaryType);
         std::cout << deviceID << " " << basePath << " " << seed << " "
-                  << simulationID << " " << writeFullOutput << std::endl;
+                  << simulationID << " " << writeFullOutput << " "
+                  << boundaryType << std::endl;
         bool progressBar = thread_index == 0;
         try {
           model.simulate(progressBar);

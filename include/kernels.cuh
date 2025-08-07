@@ -52,6 +52,20 @@ __device__ __forceinline__ Real derivativeYChem(Real* C,
                                                 int j,
                                                 Param* p);
 
+// Device function pointer typedef
+typedef Real (*BoundaryConditionFunc)(const int2&, int, Param*, int, Real);
+
+__device__ Real circular_boundary_condition(const int2& thread_loc,
+                                            int t,
+                                            Param* p,
+                                            int k,
+                                            Real phi_);
+__device__ Real square_boundary_condition(const int2& thread_loc,
+                                          int t,
+                                          Param* p,
+                                          int k,
+                                          Real phi_);
+
 __global__ void initializePhiKernel(Real* phi, Param* p);
 __global__ void updatePhiKernel(Real* phi,
                                 Real* A,
@@ -61,7 +75,10 @@ __global__ void updatePhiKernel(Real* phi,
                                 int2* grid_location,
                                 Real* collision_force,
                                 Real* phi_t,
-                                int t);
+                                Real* time_since_division,
+                                int t,
+                                int numCells,
+                                BoundaryConditionFunc boundary_condition);
 __global__ void updatePhiKernelChemo(Real* phi,
                                      Real* A,
                                      Real* R,
@@ -71,7 +88,8 @@ __global__ void updatePhiKernelChemo(Real* phi,
                                      int2* grid_location,
                                      Real* collision_force,
                                      Real* buffer,
-                                     int t);
+                                     int t,
+                                     int numCells);
 __global__ void updateCKernel(Real* C, Real* Cbuffer, Param* p);
 __global__ void updateAKernel(Real* phi,
                               Real* A,
@@ -81,7 +99,9 @@ __global__ void updateAKernel(Real* phi,
                               int2* grid_location,
                               curandState* state,
                               Real* buffer,
-                              int t);
+                              Real* time_since_division,
+                              int t,
+                              int numCells);
 __global__ void updateRKernel(Real* phi,
                               Real* A,
                               Real* R,
@@ -89,7 +109,8 @@ __global__ void updateRKernel(Real* phi,
                               Real* phi_t,
                               int2* grid_location,
                               curandState* state,
-                              Real* buffer);
+                              Real* buffer,
+                              int numCells);
 __global__ void updateRKernelChemo(Real* phi,
                                    Real* A,
                                    Real* R,
@@ -98,7 +119,8 @@ __global__ void updateRKernelChemo(Real* phi,
                                    Real* phi_t,
                                    int2* grid_location,
                                    curandState* state,
-                                   Real* buffer);
+                                   Real* buffer,
+                                   int numCells);
 __global__ void setupCurandStates(curandState* state,
                                   unsigned long long seed,
                                   unsigned long long offset,
@@ -106,36 +128,61 @@ __global__ void setupCurandStates(curandState* state,
 __global__ void getYIndexMaskedKernel(Real* phi,
                                       Real* buffer,
                                       Param* p,
-                                      Real cutoff);
+                                      Real cutoff,
+                                      int numCells);
 __global__ void getXIndexMaskedKernel(Real* phi,
                                       Real* buffer,
                                       Param* p,
-                                      Real cutoff);
+                                      Real cutoff,
+                                      int numCells);
 __global__ void rollGridYKernel(Real* phi,
                                 Real* buffer,
                                 int2* d_grid,
-                                Param* p);
+                                Param* p,
+                                int numCells);
 __global__ void rollGridXKernel(Real* phi,
                                 Real* buffer,
                                 int2* d_grid,
-                                Param* p);
+                                Param* p,
+                                int numCells);
 __global__ void updateGridLocationKernel(int2* d_grid_minmax,
                                          int2* d_grid_location,
-                                         Param* p);
+                                         Param* p,
+                                         int numCells);
 __global__ void updateCollisionForceKernel(Real* phi,
                                            int2* grid_locations,
                                            Param* p,
-                                           Real* collision_force);
-__global__ void updateBoundingIndex(int2* grid_cublas_index, Param* p);
-__global__ void createCOMXKernel(Real* phi, Real* buffer, Param* p);
-__global__ void createCOMYKernel(Real* phi, Real* buffer, Param* p);
-__global__ void createCOMAYKernel(Real* phi, Real* A, Real* buffer, Param* p);
-__global__ void createCOMAXKernel(Real* phi, Real* A, Real* buffer, Param* p);
-__global__ void multiplyKernel(Real* in1, Real* in2, Real* out, Param* p);
+                                           Real* collision_force,
+                                           int numCells);
+__global__ void addKernel(Real* a, Real* da, Param* p, int numCells);
+__global__ void createCOMXKernel(Real* phi,
+                                 Real* buffer,
+                                 Param* p,
+                                 int numCells);
+__global__ void createCOMYKernel(Real* phi,
+                                 Real* buffer,
+                                 Param* p,
+                                 int numCells);
+__global__ void createCOMAYKernel(Real* phi,
+                                  Real* A,
+                                  Real* buffer,
+                                  Param* p,
+                                  int numCells);
+__global__ void createCOMAXKernel(Real* phi,
+                                  Real* A,
+                                  Real* buffer,
+                                  Param* p,
+                                  int numCells);
+__global__ void multiplyKernel(Real* in1,
+                               Real* in2,
+                               Real* out,
+                               Param* p,
+                               int numCells);
 __global__ void makeLabelImage(Real* phi,
                                Real* buffer,
                                int2* grid_location,
-                               Param* p);
+                               Param* p,
+                               int numCells);
 __global__ void copyToBacklogKernel(Real* d_outputs,
                                     Real2* d_com,
                                     Real2* d_comA,
@@ -148,5 +195,15 @@ __global__ void copyToBacklogKernel(Real* d_outputs,
 __global__ void copyToX(Real* tmp_com, Real2* d_com, int numCells);
 __global__ void copyToY(Real* tmp_com, Real2* d_com, int numCells);
 __forceinline__ __device__ int positive_modulus(int a, int b);
+__global__ void divideCells(Real* phi,
+                            Real* A,
+                            Real* R,
+                            Param* param,
+                            int* new_indices,
+                            Real2* com,
+                            Real* area,
+                            Real2* division_axes,
+                            int numCells);
+__global__ void add_time(Real* time, Real dt, int numCells);
 
 #endif  // KERNELS_CUH
