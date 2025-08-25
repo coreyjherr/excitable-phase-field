@@ -287,10 +287,10 @@ def create_label_video(
 
     numCells = int(param_df["numCellsInitial"].iloc[0])
     # T = param_df['T'].iloc[0]/param_df['blind'].iloc[0]
-    # step between frames is defined to 400
-    T = param_df["T"].iloc[0] / 400
+    # step between frames is defined to defined
+    skip_t = 800
+    T = param_df["T"].iloc[0] / skip_t
     T = int(T)
-    skip_t = 400
     skip_num = int(skip_t / param_df["blind"].iloc[0])
     num_rows = param_df["T"].iloc[0] / param_df["blind"].iloc[0] * numCells
 

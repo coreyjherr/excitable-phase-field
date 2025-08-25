@@ -42,6 +42,7 @@ SOFTWARE
 #include "include/params.hpp"
 
 #define USE_FLOAT
+#define SKIP_FRAMES_FULL_OUTPUT 800
 
 #ifdef USE_FLOAT
 #define cublasRasum(handle, n, x, incx, result) \
@@ -89,6 +90,7 @@ Real initializeParamArray(Param p,
   for (int i = 0; i < p.maxCells; ++i) {
     p_array[i] = p;
     p_array[i].r0 = p.r0 + (p.delta_r * rand()) / (RAND_MAX + 1.0);
+    p_array[i].division_time *= 0.9 + 0.2 * rand() / (RAND_MAX + 1.0);
     p_array[i].S0 = M_PI * p_array[i].r0 * p_array[i].r0;
     if (i < p.numCellsInitial)
       total_area += p_array[i].S0;
@@ -104,7 +106,7 @@ Real initializeParamArray(Param p,
     p_array[i].Nchem = 2 * p_array[i].R_wall / p_array[i].dx + N;
   }
   if (boundaryType == "circular") {
-    populationRadius = sqrt(total_area / (M_PI * p.packing_fraction));
+    populationRadius = sqrt(total_area / 4 / (M_PI * p.packing_fraction));
   } else if (boundaryType == "square") {
     populationRadius = sqrt(total_area / (p.packing_fraction)) / 2;
   }
@@ -172,7 +174,7 @@ Model::Model(Param param,
       dim3((N + blockSizeX - 1) / blockSizeX, (N + blockSizeY - 1) / blockSizeY,
            (currentNumCells + blockSizeZ - 1) / blockSizeZ);
 
-  Param* paramArray = new Param[p.maxCells];
+  paramArray = new Param[p.maxCells];
   Real populationRadius = initializeParamArray(p, paramArray, boundaryType);
   p.R_wall = populationRadius;
 #ifdef USE_CHEMO
@@ -186,7 +188,6 @@ Model::Model(Param param,
   cudaErrCheck(cudaMalloc((void**)&d_Param, sizeof(Param) * p.maxCells));
   cudaErrCheck(cudaMemcpy(d_Param, paramArray, sizeof(Param) * p.maxCells,
                           cudaMemcpyHostToDevice));
-  // delete[] paramArray;
 
   // Initialize device and host pointers
   initializeDeviceMemory();
@@ -570,8 +571,8 @@ void Model::simulate(bool progressBar, bool useCondensedOutput) {
       }
     }
 
-    // Hardcode the full output to every 400 steps
-    if (t % 400 == 0 && writeFullOutput_) {
+    // Hardcode the full output to every
+    if (t % SKIP_FRAMES_FULL_OUTPUT == 0 && writeFullOutput_) {
       writeFullOutput();
     }
 
@@ -882,45 +883,46 @@ std::vector<Real> Model::getArea() {
 
 void Model::updateCellDivisions() {
   int numNewCells = 0;
+  bool triggerUpdate = false;
   for (int k = 0; k < currentNumCells; ++k) {
     time_since_division[k] += p.dt;
-    if (time_since_division[k] >= p.division_time) {
-      new_cell_indices[k] = numNewCells + currentNumCells;
-      numNewCells++;
+    if (time_since_division[k] >= paramArray[k].division_time) {
+      triggerUpdate = true;
     }
   }
-  if (numNewCells > 0) {
+  if (triggerUpdate) {
     cudaErrCheck(cudaMemcpy(area, d_area, currentNumCells * sizeof(Real),
                             cudaMemcpyDeviceToHost));
     cudaErrCheck(
         cudaMemcpy(cudaTypes->grid_location, cudaTypes->d_grid_location,
                    currentNumCells * sizeof(int2), cudaMemcpyDeviceToHost));
-  }
-  for (int k = 0; k < currentNumCells; ++k) {
-    if (time_since_division[k] >= p.division_time &&
-        area[k] >= 0.95 * p.S0 / p.dx / p.dx) {
-      std::cout << "Dividing cell " << k << " at time "
-                << time_since_division[k] << " with area " << area[k]
-                << std::endl;
-      std::cout << "New cell index: " << new_cell_indices[k] << std::endl;
-      time_since_division[k] = 0.0;
-      // Update the grid location for the new cell
-      cudaTypes->grid_location[k + currentNumCells].x =
-          cudaTypes->grid_location[k].x;
-      cudaTypes->grid_location[k + currentNumCells].y =
-          cudaTypes->grid_location[k].y;
-      std::cout << "New cell location: ("
-                << cudaTypes->grid_location[k + currentNumCells].x << ", "
-                << cudaTypes->grid_location[k + currentNumCells].y << ")"
-                << std::endl;
-      Real division_angle = M_PI * rand() / (RAND_MAX + 1.0);
-      cudaTypes->division_axes[k].x = cos(division_angle);
-      cudaTypes->division_axes[k].y = sin(division_angle);
-      std::cout << cudaTypes->division_axes[k].x << ","
-                << cudaTypes->division_axes[k].y << "\n";
+    for (int k = 0; k < currentNumCells; ++k) {
+      if (time_since_division[k] >= paramArray[k].division_time &&
+          area[k] >= 0.95 * p.S0 / p.dx / p.dx) {
+        new_cell_indices[k] = numNewCells + currentNumCells;
+        numNewCells++;
 
-    } else {
-      new_cell_indices[k] = 0;  // no division
+        std::cout << "Dividing cell " << k << " at time "
+                  << time_since_division[k] << " with area " << area[k]
+                  << std::endl;
+        std::cout << "New cell index: " << new_cell_indices[k] << std::endl;
+        time_since_division[k] = 0.0;
+        // Update the grid location for the new cell
+        cudaTypes->grid_location[new_cell_indices[k]].x =
+            cudaTypes->grid_location[k].x;
+        cudaTypes->grid_location[new_cell_indices[k]].y =
+            cudaTypes->grid_location[k].y;
+        std::cout << "New cell location: ("
+                  << cudaTypes->grid_location[new_cell_indices[k]].x << ", "
+                  << cudaTypes->grid_location[new_cell_indices[k]].y << ")"
+                  << std::endl;
+        Real division_angle = M_PI * rand() / (RAND_MAX + 1.0);
+        cudaTypes->division_axes[k].x = cos(division_angle);
+        cudaTypes->division_axes[k].y = sin(division_angle);
+
+      } else {
+        new_cell_indices[k] = 0;  // no division
+      }
     }
   }
   add_time<<<blocksNumCells, threadsNumCells>>>(d_time_since_division, p.dt,
@@ -954,7 +956,8 @@ void Model::updateCellDivisions() {
         cudaMemcpy(cudaTypes->d_grid_location, cudaTypes->grid_location,
                    currentNumCells * sizeof(int2), cudaMemcpyHostToDevice));
     cudaErrCheck(cudaMemcpy(d_time_since_division, time_since_division,
-                            currentNumCells * sizeof(int2),
-                            cudaMemcpyHostToDevice)) updateGridLocation();
+                            currentNumCells * sizeof(int),
+                            cudaMemcpyHostToDevice));
+    updateGridLocation();
   }
 }

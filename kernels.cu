@@ -313,15 +313,11 @@ __global__ void updatePhiKernel(Real* phi,
     }
 
     Real t_r = time_since_division[k];
-    // Real reproduction_factor =
-    // t_r*(p[k].division_time-t_r)/(p[k].division_time*p[k].division_time/4);
-    Real reproduction_factor = 0 ? abs(1 - t_r / p[k].division_time) < 0.3 : 1;
-    reproduction_factor = 1;
 
     dphi += sqrt(phi_x * phi_x + phi_y * phi_y) *
                 (-p[k].B_s * (area[k] * p[k].dx * p[k].dx -
                               volumeGrowthCurve(t_r, p[k])) +
-                 p[k].alpha * reproduction_factor * A[idx] * phi_) -
+                 p[k].alpha * A[idx] * phi_) -
             collision_force[idx] - wall_force;
 
     phi_t[idx] = dphi / p[k].xi;
@@ -408,10 +404,6 @@ __global__ void updateAKernel(Real* phi,
       int ridge_oscillation_amplitude =
           round(p[0].chem_force *
                 (1 + sin(2 * M_PI * t * p[k].dt / p[0].chem_decay)));
-      Real t_r = time_since_division[k];
-      Real reproduction_factor =
-          1 + 0 * (1 - t_r * (p[k].division_time - t_r) /
-                           (p[k].division_time * p[k].division_time / 4));
       Real ridge_factor = positive_modulus(grid_location[k].x + i, 20) <
                                   ridge_oscillation_amplitude
                               ? p[k].chem_strength
@@ -423,8 +415,8 @@ __global__ void updateAKernel(Real* phi,
       dA += p[k].D_A * laplacian(A, i, j, k, p);
       dA += p[k].D_A * (phi_x * A_x + phi_y * A_y) / phi_;
 
-      dA += (p[k].A_t - A_) * (p[k].k_a / (ridge_factor * reproduction_factor) *
-                                   A_ * A_ / (p[k].K * p[k].K + A_ * A_) +
+      dA += (p[k].A_t - A_) * (p[k].k_a / (ridge_factor)*A_ * A_ /
+                                   (p[k].K * p[k].K + A_ * A_) +
                                p[k].b) -
             (p[k].d1 + p[k].d2 * R[idx]) * A_;
       dA -= A_ * phi_t[idx] / phi_;
@@ -809,8 +801,10 @@ __global__ void divideCells(Real* phi,
       if (x_cell * division_axes[k].x + y_cell * division_axes[k].y > 0) {
         phi[new_idx] = phi_;
         phi[idx] = 0;
+
         A[new_idx] = 0;
         A[idx] = 0;
+
         R[new_idx] = 0;
         R[idx] = 0;
       } else {

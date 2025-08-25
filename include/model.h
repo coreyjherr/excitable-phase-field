@@ -58,7 +58,7 @@ class Model {
   int *new_cell_indices, *d_new_cell_indices;
 
   Param p;
-  Param* d_Param;
+  Param *d_Param, *paramArray;
 
   int currentNumCells, deviceID_;
 
